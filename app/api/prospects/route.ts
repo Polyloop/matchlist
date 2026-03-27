@@ -9,9 +9,20 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const stage = searchParams.get("stage");
+    const listId = searchParams.get("list_id");
     const offset = (page - 1) * limit;
 
     const supabase = createAdminClient();
+
+    // If filtering by list, get prospect IDs in that list first
+    let prospectIdsInList: string[] | null = null;
+    if (listId) {
+      const { data: members } = await supabase
+        .from("prospect_list_members")
+        .select("prospect_id")
+        .eq("list_id", listId);
+      prospectIdsInList = (members ?? []).map((m) => m.prospect_id);
+    }
 
     // Build query for prospects with their enrichment job status
     let query = supabase
@@ -26,6 +37,13 @@ export async function GET(request: NextRequest) {
 
     if (stage) {
       query = query.eq("enrichment_jobs.stage", stage);
+    }
+
+    if (prospectIdsInList !== null) {
+      if (prospectIdsInList.length === 0) {
+        return NextResponse.json({ prospects: [], total: 0, page, limit });
+      }
+      query = query.in("id", prospectIdsInList);
     }
 
     const { data, error, count } = await query;

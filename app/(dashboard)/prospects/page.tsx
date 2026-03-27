@@ -1,19 +1,7 @@
 import Link from "next/link";
-import { requireOrg } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { ProspectsTable } from "@/components/prospects-table";
+import { ProspectsPageClient } from "@/components/prospects-page-client";
 
-export default async function ProspectsPage() {
-  const { orgId } = await requireOrg();
-  const supabase = createAdminClient();
-
-  const { data: prospects } = await supabase
-    .from("prospects")
-    .select("*, enrichment_jobs(stage, error_message)")
-    .eq("org_id", orgId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
+export default function ProspectsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -25,7 +13,7 @@ export default async function ProspectsPage() {
           Import CSV
         </Link>
       </div>
-      <ProspectsTable prospects={prospects ?? []} />
+      <ProspectsPageClient />
     </div>
   );
 }

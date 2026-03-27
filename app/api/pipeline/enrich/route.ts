@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOrgSetting } from "@/lib/settings";
 
 export async function POST(request: Request) {
   try {
@@ -22,19 +23,32 @@ export async function POST(request: Request) {
       throw new Error(`Prospect not found: ${fetchError?.message}`);
     }
 
-    // Call Proxycurl API for LinkedIn enrichment
+    // Call Bright Data LinkedIn Profile Scraper API
     let employer: string | null = null;
     if (prospect.linkedin_url) {
+      const apiKey = await getOrgSetting(orgId, "BRIGHT_DATA_API_KEY");
+      if (!apiKey) {
+        throw new Error("Bright Data API key not configured");
+      }
+
       const res = await fetch(
-        `https://nubela.co/proxycurl/api/v2/linkedin?url=${encodeURIComponent(prospect.linkedin_url)}`,
+        "https://api.brightdata.com/linkedin/profiles/collect",
         {
-          headers: { Authorization: `Bearer ${process.env.PROXYCURL_API_KEY}` },
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: prospect.linkedin_url }),
         },
       );
 
       if (res.ok) {
         const data = await res.json();
-        employer = data.experiences?.[0]?.company ?? null;
+        employer = data.current_company ?? null;
+      } else {
+        const errorText = await res.text();
+        throw new Error(`Bright Data API error (${res.status}): ${errorText}`);
       }
     }
 

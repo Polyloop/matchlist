@@ -5,7 +5,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-const SEED_CLERK_ORG_ID = "org_seed_dev_123";
+const SEED_CLERK_ORG_ID = "org_3BWuiKSGtpnWgSNxyI2CG70VKTc";
 
 async function seed() {
   console.log("Seeding database...");
