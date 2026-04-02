@@ -26,6 +26,7 @@ export async function POST(
       .select("id")
       .eq("id", listId)
       .eq("org_id", orgId)
+      .eq("type", "segment")
       .single();
 
     if (!list) {

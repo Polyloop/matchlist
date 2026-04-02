@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const stage = searchParams.get("stage");
     const listId = searchParams.get("list_id");
+    const batchId = searchParams.get("batch_id");
     const offset = (page - 1) * limit;
 
     const supabase = createAdminClient();
@@ -37,6 +38,10 @@ export async function GET(request: NextRequest) {
 
     if (stage) {
       query = query.eq("enrichment_jobs.stage", stage);
+    }
+
+    if (batchId) {
+      query = query.eq("import_batch_id", batchId);
     }
 
     if (prospectIdsInList !== null) {

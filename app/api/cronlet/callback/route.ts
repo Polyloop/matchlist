@@ -15,7 +15,10 @@ export async function POST(request: Request) {
     const metadata = payload.task.metadata as {
       prospectId: string;
       orgId: string;
-      stage: string;
+      stage: "enrich" | "match" | "generate-message" | "send";
+      flow?: "import_reveal" | "outreach_resume";
+      stopAfter?: "match" | "send";
+      importBatchId?: string | null;
     } | null;
 
     if (!metadata?.prospectId || !metadata?.orgId || !metadata?.stage) {
@@ -42,9 +45,13 @@ export async function POST(request: Request) {
 
     if (payload.event === "task.run.completed") {
       // Trigger next pipeline stage
-      const nextStage = getNextStage(stage);
+      const nextStage = getNextStage(stage, metadata.stopAfter ?? "send");
       if (nextStage) {
-        await triggerPipelineStage(nextStage, prospectId, orgId);
+        await triggerPipelineStage(nextStage, prospectId, orgId, {
+          flow: metadata.flow,
+          stopAfter: metadata.stopAfter,
+          importBatchId: metadata.importBatchId ?? null,
+        });
       }
     }
 

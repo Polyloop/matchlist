@@ -8,6 +8,7 @@ export type EnrichmentStage =
   | "failed";
 
 export type OutreachStatus = "draft" | "approved" | "sent" | "failed";
+export type ProspectListType = "segment" | "team" | "campaign";
 
 export interface Organization {
   id: string;
@@ -27,6 +28,9 @@ export interface Prospect {
   employer_match_ratio: number | null;
   employer_match_cap: number | null;
   match_eligible: boolean;
+  import_batch_id: string | null;
+  team_list_id: string | null;
+  campaign_list_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,7 +39,16 @@ export interface ProspectList {
   id: string;
   org_id: string;
   name: string;
+  type: ProspectListType;
   created_at: string;
+}
+
+export interface ImportBatch {
+  id: string;
+  org_id: string;
+  source_filename: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface EnrichmentJob {
@@ -78,6 +91,11 @@ export type Database = {
         Row: ProspectList;
         Insert: Omit<ProspectList, "id" | "created_at">;
         Update: Partial<Omit<ProspectList, "id">>;
+      };
+      import_batches: {
+        Row: ImportBatch;
+        Insert: Omit<ImportBatch, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ImportBatch, "id">>;
       };
       enrichment_jobs: {
         Row: EnrichmentJob;

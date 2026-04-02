@@ -12,6 +12,7 @@ export async function GET() {
       .from("prospect_lists")
       .select("id, name, created_at")
       .eq("org_id", orgId)
+      .eq("type", "segment")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabase
       .from("prospect_lists")
-      .insert({ org_id: orgId, name: name.trim() })
+      .insert({ org_id: orgId, name: name.trim(), type: "segment" })
       .select()
       .single();
 

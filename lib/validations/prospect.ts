@@ -5,6 +5,8 @@ export const prospectImportRowSchema = z.object({
   email: z.email().optional(),
   linkedin_url: z.url().optional(),
   employer: z.string().optional(),
+  team: z.string().optional(),
+  campaign: z.string().optional(),
 });
 
 export type ProspectImportRow = z.infer<typeof prospectImportRowSchema>;

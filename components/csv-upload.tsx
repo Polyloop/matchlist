@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Papa from "papaparse";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -12,24 +13,100 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { CloudUploadIcon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
 
-const PROSPECT_FIELDS = ["name", "email", "linkedin_url", "employer"];
+const PROSPECT_FIELDS = [
+  "name",
+  "email",
+  "linkedin_url",
+  "employer",
+  "team",
+  "campaign",
+];
+
+const STEPS = [
+  { label: "Upload" },
+  { label: "Map Columns" },
+  { label: "Review & Import" },
+];
+
+function StepIndicator({ currentStep }: { currentStep: number }) {
+  return (
+    <div className="flex items-center justify-center gap-0">
+      {STEPS.map((step, i) => {
+        const isCompleted = i < currentStep;
+        const isActive = i === currentStep;
+        return (
+          <div key={step.label} className="flex items-center">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors",
+                  isCompleted
+                    ? "bg-primary/20 text-primary"
+                    : isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                )}
+              >
+                {isCompleted ? (
+                  <HugeiconsIcon
+                    icon={CheckmarkCircle02Icon}
+                    strokeWidth={2}
+                    className="size-4"
+                  />
+                ) : (
+                  i + 1
+                )}
+              </span>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  isActive
+                    ? "text-foreground"
+                    : isCompleted
+                      ? "text-primary"
+                      : "text-muted-foreground",
+                )}
+              >
+                {step.label}
+              </span>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div
+                className={cn(
+                  "mx-4 h-px w-10",
+                  i < currentStep ? "bg-primary/30" : "bg-border",
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function CsvUpload() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [importing, setImporting] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<{
     imported: number;
     errors: Array<{ row: number; message: string }>;
     total: number;
   } | null>(null);
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
+  const currentStep = !file ? 0 : headers.length > 0 && Object.values(mapping).some(Boolean) ? 2 : 1;
+
+  const processFile = useCallback((f: File) => {
     setFile(f);
     setResult(null);
 
@@ -41,7 +118,6 @@ export function CsvUpload() {
         const cols = results.meta.fields ?? [];
         setHeaders(cols);
         setPreview(results.data);
-        // Auto-map matching column names
         const autoMap: Record<string, string> = {};
         for (const col of cols) {
           const lower = col.toLowerCase().replace(/[^a-z_]/g, "");
@@ -52,92 +128,222 @@ export function CsvUpload() {
         setMapping(autoMap);
       },
     });
+  }, []);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) processFile(f);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.name.endsWith(".csv")) {
+      processFile(f);
+    } else {
+      toast.error("Please drop a CSV file");
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
   }
 
   async function handleImport() {
     if (!file) return;
     setImporting(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("mapping", JSON.stringify(mapping));
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("mapping", JSON.stringify(mapping));
 
-    const res = await fetch("/api/prospects/import", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await res.json();
-    setResult(data);
-    setImporting(false);
+      const res = await fetch("/api/prospects/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Import failed");
+        setResult(null);
+        return;
+      }
+
+      if (data.imported > 0 && data.batchId) {
+        if (data.errors?.length > 0) {
+          toast.success(
+            `Imported ${data.imported} prospects with ${data.errors.length} row errors`,
+          );
+        } else {
+          toast.success(`Imported ${data.imported} prospects`);
+        }
+        router.push(`/imports/${data.batchId}`);
+        return;
+      }
+
+      setResult(data);
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Input type="file" accept=".csv" onChange={handleFileChange} />
-      </div>
+    <div className="space-y-8">
+      <StepIndicator currentStep={currentStep} />
 
+      {/* Drop zone / file display */}
+      {!file ? (
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={() => fileInputRef.current?.click()}
+          className={cn(
+            "flex cursor-pointer flex-col items-center gap-4 rounded-lg border-2 border-dashed p-10 text-center transition-colors",
+            dragging
+              ? "border-primary bg-primary/5"
+              : "border-border hover:border-primary/40 hover:bg-muted/30",
+          )}
+        >
+          <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+            <HugeiconsIcon
+              icon={CloudUploadIcon}
+              strokeWidth={1.5}
+              className="size-7 text-muted-foreground"
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium">
+              Drop your CSV here or click to browse
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              We&apos;ll check each person&apos;s employer for matching gift programs
+            </p>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <HugeiconsIcon
+            icon={CloudUploadIcon}
+            strokeWidth={1.5}
+            className="size-5 text-primary"
+          />
+          <span className="flex-1 truncate text-sm font-medium">
+            {file.name}
+          </span>
+          <button
+            onClick={() => {
+              setFile(null);
+              setHeaders([]);
+              setPreview([]);
+              setMapping({});
+              setResult(null);
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Change file
+          </button>
+        </div>
+      )}
+
+      {/* Column mapping */}
       {headers.length > 0 && (
         <>
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Map CSV columns to fields</h3>
             <div className="grid gap-2 sm:grid-cols-2">
-              {headers.map((col) => (
-                <div key={col} className="flex items-center gap-2">
-                  <span className="min-w-24 text-sm text-muted-foreground">
-                    {col}
-                  </span>
-                  <select
-                    className="rounded-md border px-2 py-1 text-sm"
-                    value={mapping[col] || ""}
-                    onChange={(e) =>
-                      setMapping((prev) => ({
-                        ...prev,
-                        [col]: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Skip</option>
-                    {PROSPECT_FIELDS.map((field) => (
-                      <option key={field} value={field}>
-                        {field}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
+              {headers.map((col) => {
+                const isMapped = !!mapping[col];
+                return (
+                  <div key={col} className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        isMapped ? "bg-primary" : "bg-border",
+                      )}
+                    />
+                    <span className="min-w-24 truncate text-sm text-muted-foreground">
+                      {col}
+                    </span>
+                    <select
+                      className="rounded-md border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
+                      value={mapping[col] || ""}
+                      onChange={(e) =>
+                        setMapping((prev) => ({
+                          ...prev,
+                          [col]: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Skip</option>
+                      {PROSPECT_FIELDS.map((field) => (
+                        <option key={field} value={field}>
+                          {field}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
+          {/* Preview */}
           <div>
             <h3 className="mb-2 text-sm font-medium">Preview (first 5 rows)</h3>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {headers.map((h) => (
-                    <TableHead key={h}>{h}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {preview.map((row, i) => (
-                  <TableRow key={i}>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {headers.map((h) => (
-                      <TableCell key={h}>{row[h]}</TableCell>
+                      <TableHead key={h}>
+                        <span className={cn(mapping[h] ? "text-foreground" : "text-muted-foreground/60")}>
+                          {h}
+                        </span>
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {preview.map((row, i) => (
+                    <TableRow key={i}>
+                      {headers.map((h) => (
+                        <TableCell
+                          key={h}
+                          className={cn(!mapping[h] && "text-muted-foreground/60")}
+                        >
+                          {row[h]}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
-          <Button onClick={handleImport} disabled={importing}>
+          <Button onClick={handleImport} disabled={importing} size="lg">
             {importing ? "Importing..." : "Import & Start Enrichment"}
           </Button>
         </>
       )}
 
       {result && (
-        <div className="rounded-md border p-4">
+        <div className="rounded-lg border p-4">
           <p className="font-medium">
             Imported {result.imported} of {result.total} prospects
           </p>

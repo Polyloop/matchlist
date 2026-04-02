@@ -7,24 +7,46 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 const API_KEY_FIELDS = [
   {
     key: "BRIGHT_DATA_API_KEY",
-    label: "Bright Data API Key",
-    description: "LinkedIn profile enrichment via Bright Data",
+    label: "LinkedIn Enrichment",
+    description: "Powered by Bright Data — used to look up donor employment details",
   },
   {
     key: "DOUBLE_THE_DONATION_API_KEY",
-    label: "Double the Donation API Key",
-    description: "Matching gift eligibility checks",
+    label: "Matching Gift Database",
+    description: "Powered by Double the Donation — checks employer matching programs",
   },
   {
     key: "ANTHROPIC_API_KEY",
-    label: "Anthropic API Key",
-    description: "Claude API for message generation",
+    label: "AI Message Writer",
+    description: "Powered by Claude — generates personalized outreach messages",
   },
 ];
+
+function StatusDot({ configured }: { configured: boolean }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          configured ? "bg-primary" : "bg-amber-500",
+        )}
+      />
+      <span
+        className={cn(
+          "text-xs",
+          configured ? "text-primary" : "text-amber-600 dark:text-amber-400",
+        )}
+      >
+        {configured ? "Connected" : "Not set up"}
+      </span>
+    </span>
+  );
+}
 
 interface SettingsFormProps {
   orgName: string;
@@ -71,7 +93,6 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
 
       if (res.ok) {
         toast.success("Settings saved");
-        // Reload masked values
         const refreshRes = await fetch("/api/settings");
         if (refreshRes.ok) {
           const data = await refreshRes.json();
@@ -92,7 +113,7 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
     <Tabs defaultValue="organization">
       <TabsList>
         <TabsTrigger value="organization">Organization</TabsTrigger>
-        <TabsTrigger value="api-keys">API Keys</TabsTrigger>
+        <TabsTrigger value="api-keys">Integrations</TabsTrigger>
         <TabsTrigger value="email">Email</TabsTrigger>
       </TabsList>
 
@@ -125,7 +146,7 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
       <TabsContent value="api-keys" className="mt-4">
         <Card>
           <CardHeader>
-            <CardTitle>API Keys</CardTitle>
+            <CardTitle>Integrations</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -136,29 +157,35 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading...</p>
             ) : (
-              API_KEY_FIELDS.map((field) => (
-                <div key={field.key}>
-                  <label className="text-sm font-medium">{field.label}</label>
-                  <p className="mb-1 text-xs text-muted-foreground">
-                    {field.description}
-                  </p>
-                  <Input
-                    type="password"
-                    value={apiKeys[field.key] || ""}
-                    onChange={(e) =>
-                      setApiKeys((prev) => ({
-                        ...prev,
-                        [field.key]: e.target.value,
-                      }))
-                    }
-                    placeholder="Enter API key"
-                    className="font-mono text-sm"
-                  />
-                </div>
-              ))
+              API_KEY_FIELDS.map((field) => {
+                const hasValue = !!apiKeys[field.key] && apiKeys[field.key] !== "";
+                return (
+                  <div key={field.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">{field.label}</label>
+                      <StatusDot configured={hasValue} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {field.description}
+                    </p>
+                    <Input
+                      type="password"
+                      value={apiKeys[field.key] || ""}
+                      onChange={(e) =>
+                        setApiKeys((prev) => ({
+                          ...prev,
+                          [field.key]: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter API key"
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                );
+              })
             )}
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save API Keys"}
+              {saving ? "Saving..." : "Save Integrations"}
             </Button>
           </CardContent>
         </Card>
@@ -180,7 +207,7 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
             </div>
             <p className="text-sm text-muted-foreground">
               Email sender address is configured via the{" "}
-              <code className="rounded bg-muted px-1">RESEND_FROM_EMAIL</code>{" "}
+              <code className="rounded-md bg-muted px-1">RESEND_FROM_EMAIL</code>{" "}
               environment variable.
             </p>
           </CardContent>

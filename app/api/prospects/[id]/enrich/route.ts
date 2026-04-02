@@ -16,7 +16,7 @@ export async function POST(
     // Verify prospect belongs to this org
     const { data: prospect } = await supabase
       .from("prospects")
-      .select("id")
+      .select("id, import_batch_id")
       .eq("id", prospectId)
       .eq("org_id", orgId)
       .single();
@@ -37,7 +37,11 @@ export async function POST(
       .eq("org_id", orgId);
 
     // Trigger enrichment pipeline
-    await triggerPipelineStage("enrich", prospectId, orgId);
+    await triggerPipelineStage("enrich", prospectId, orgId, {
+      flow: prospect.import_batch_id ? "import_reveal" : "outreach_resume",
+      stopAfter: prospect.import_batch_id ? "match" : "send",
+      importBatchId: prospect.import_batch_id,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
