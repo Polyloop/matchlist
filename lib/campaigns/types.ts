@@ -1,4 +1,4 @@
-import type { CampaignType } from "@/lib/supabase/types";
+import type { CampaignType } from "@/lib/types";
 
 export interface CampaignTypeConfig {
   label: string;

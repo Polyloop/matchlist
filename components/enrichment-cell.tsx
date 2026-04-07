@@ -15,7 +15,7 @@ import {
   RepeatIcon,
 } from "@hugeicons/core-free-icons";
 import { getDisplayValue } from "@/lib/enrichments";
-import type { EnrichmentResultStatus } from "@/lib/supabase/types";
+import type { EnrichmentResultStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface EnrichmentCellProps {

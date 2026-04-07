@@ -126,4 +126,50 @@
   html {
     @apply font-sans;
     }
+
+  /* Cursor pointer on all interactive elements */
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="checkbox"],
+  [role="menuitem"],
+  [role="option"],
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  a[href],
+  summary {
+    cursor: pointer;
+  }
+}
+
+/* Override base-lyra's rounded-none with a consistent small border radius */
+@layer components {
+  [data-slot="card"],
+  [data-slot="button"],
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="badge"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="command"],
+  [data-slot="select-content"],
+  [data-slot="tooltip-content"],
+  [data-slot="sheet-content"],
+  [data-slot="skeleton"],
+  [data-slot="checkbox"],
+  [data-slot="tabs-list"] {
+    border-radius: var(--radius-sm) !important;
+  }
+  [data-slot="tabs-trigger"] {
+    border-radius: calc(var(--radius-sm) * 0.8) !important;
+  }
+  [data-slot="badge"] {
+    text-transform: capitalize;
+  }
 }

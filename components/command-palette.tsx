@@ -56,13 +56,9 @@ export function CommandPalette() {
             <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={1.5} className="mr-2 size-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => router.push("/prospects"))}>
-            <HugeiconsIcon icon={UserGroupIcon} strokeWidth={1.5} className="mr-2 size-4" />
-            Prospects
-          </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => router.push("/outreach"))}>
+          <CommandItem onSelect={() => runCommand(() => router.push("/review"))}>
             <HugeiconsIcon icon={MailSend01Icon} strokeWidth={1.5} className="mr-2 size-4" />
-            Outreach
+            Review Messages
           </CommandItem>
           <CommandItem onSelect={() => runCommand(() => router.push("/settings"))}>
             <HugeiconsIcon icon={Setting06Icon} strokeWidth={1.5} className="mr-2 size-4" />

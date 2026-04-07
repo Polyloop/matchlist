@@ -1,178 +1,260 @@
+"use client";
+
 import Link from "next/link";
-import { requireOrg } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { StatsCards } from "@/components/stats-cards";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { SendCalendar } from "@/components/dashboard/send-calendar";
+import { CAMPAIGN_TYPE_CONFIGS } from "@/lib/campaigns/types";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Rocket01Icon, TargetIcon } from "@hugeicons/core-free-icons";
+import {
+  PlusSignIcon,
+  Upload04Icon,
+  GiftIcon,
+  Search01Icon,
+  Building06Icon,
+  UserGroupIcon,
+  PackageIcon,
+  TargetIcon,
+  MailSend01Icon,
+  Rocket01Icon,
+  ChartHistogramIcon,
+  ArrowRight01Icon,
+} from "@hugeicons/core-free-icons";
+import type { IconSvgElement } from "@hugeicons/react";
 
-export default async function DashboardPage() {
-  const { orgId } = await requireOrg();
-  const supabase = createAdminClient();
+const campaignIcons: Record<string, IconSvgElement> = {
+  gift: GiftIcon,
+  search: Search01Icon,
+  building: Building06Icon,
+  people: UserGroupIcon,
+  package: PackageIcon,
+};
 
-  const [
-    { count: totalProspects },
-    { count: enrichedCount },
-    { count: matchEligibleCount },
-    { count: sentCount },
-    { data: matchValues },
-  ] = await Promise.all([
-    supabase
-      .from("prospects")
-      .select("*", { count: "exact", head: true })
-      .eq("org_id", orgId),
-    supabase
-      .from("enrichment_jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("org_id", orgId)
-      .in("stage", ["enriched", "matched", "message_generated", "sent"]),
-    supabase
-      .from("prospects")
-      .select("*", { count: "exact", head: true })
-      .eq("org_id", orgId)
-      .eq("match_eligible", true),
-    supabase
-      .from("outreach_messages")
-      .select("*", { count: "exact", head: true })
-      .eq("org_id", orgId)
-      .eq("status", "sent"),
-    supabase
-      .from("prospects")
-      .select("employer_match_cap")
-      .eq("org_id", orgId)
-      .eq("match_eligible", true)
-      .not("employer_match_cap", "is", null),
-  ]);
-
-  const estimatedMatchValue =
-    matchValues?.reduce(
-      (sum, p) => sum + (p.employer_match_cap || 0),
-      0,
-    ) ?? 0;
-
-  const total = totalProspects ?? 0;
-  const enriched = enrichedCount ?? 0;
-  const matchEligible = matchEligibleCount ?? 0;
-  const messagesSent = sentCount ?? 0;
-
-  if (total === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="mx-auto max-w-md text-center">
-          <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-full bg-primary/10">
-            <HugeiconsIcon
-              icon={Rocket01Icon}
-              strokeWidth={1.5}
-              className="size-8 text-primary"
-            />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Welcome to MatchList
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Start by importing a list of donors. We&apos;ll identify which
-            employers offer matching gift programs and help you reach out.
-          </p>
-          <Link
-            href="/prospects/import"
-            className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/80"
-          >
-            Import Your First List
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const pipelineSteps = [
-    { label: "Imported", count: total, color: "bg-muted-foreground" },
-    { label: "Enriched", count: enriched, color: "bg-primary/70" },
-    { label: "Match Found", count: matchEligible, color: "bg-accent" },
-    { label: "Outreach Sent", count: messagesSent, color: "bg-primary" },
-  ];
+export default function DashboardPage() {
+  const campaigns = useQuery(api.campaigns.queries.list);
+  const metrics = useQuery(api.analytics.queries.global);
+  const seed = useMutation(api.seed.run);
+  const loading = campaigns === undefined;
 
   return (
-    <div className="space-y-6">
-      {/* Hero metric */}
-      <section className="relative overflow-hidden rounded-lg border border-border/70 bg-gradient-to-br from-primary/10 via-background to-accent/8 p-8 sm:p-10">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.52),transparent_42%)]" />
-        <div className="relative space-y-4">
-          <Badge variant="secondary" className="bg-background/80">
-            Estimated Match Revenue
-          </Badge>
-          <div className="space-y-1">
-            <p className="text-5xl font-semibold tracking-tight text-accent">
-              ${estimatedMatchValue.toLocaleString()}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              across {matchEligible} match-eligible donor{matchEligible !== 1 ? "s" : ""}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Link
-              href="/prospects/import"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/80"
-            >
-              Import Prospects
-            </Link>
-            {messagesSent > 0 && (
-              <Link
-                href="/outreach"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-muted hover:text-foreground"
-              >
-                Review Outreach
-              </Link>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Your campaign agent at a glance
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" render={<Link href="/campaigns" />}>
+            <HugeiconsIcon icon={Upload04Icon} strokeWidth={1.5} className="mr-1.5 size-3.5" />
+            Import
+          </Button>
+          <Button size="sm" render={<Link href="/campaigns/new" />}>
+            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={1.5} className="mr-1.5 size-3.5" />
+            New Campaign
+          </Button>
+          {/* TODO: Remove seed button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              try {
+                const r = await seed();
+                toast.success(`Seeded ${r.campaigns} campaigns, ${r.prospects} prospects`);
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Seed failed");
+              }
+            }}
+          >
+            Seed
+          </Button>
+        </div>
+      </div>
+
+      {/* Metrics row */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <MetricCard
+          label="Active Campaigns"
+          value={metrics?.activeCampaigns ?? 0}
+          icon={TargetIcon}
+        />
+        <MetricCard
+          label="Total Prospects"
+          value={metrics?.totalProspects ?? 0}
+          icon={UserGroupIcon}
+        />
+        <MetricCard
+          label="Match Eligible"
+          value={metrics?.matchEligible ?? 0}
+          icon={Rocket01Icon}
+          accent
+        />
+        <MetricCard
+          label="Messages Sent"
+          value={metrics?.messagesSent ?? 0}
+          icon={MailSend01Icon}
+        />
+        <MetricCard
+          label="Response Rate"
+          value={`${metrics?.responseRate ?? 0}%`}
+          icon={ChartHistogramIcon}
+        />
+      </div>
+
+      {/* Main content: two columns */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left: Activity feed */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Campaign cards */}
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-medium text-muted-foreground">Campaigns</h2>
+              <Button variant="ghost" size="xs" render={<Link href="/campaigns" />}>
+                View all
+                <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.5} className="ml-1 size-3" />
+              </Button>
+            </div>
+
+            {loading ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-20 animate-pulse rounded-md border bg-muted/30" />
+                ))}
+              </div>
+            ) : (campaigns ?? []).length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-between py-6">
+                  <p className="text-sm text-muted-foreground">No campaigns yet</p>
+                  <Button size="sm" render={<Link href="/campaigns/new" />}>Create Campaign</Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(campaigns ?? []).slice(0, 4).map((campaign) => {
+                  const config = CAMPAIGN_TYPE_CONFIGS[campaign.type];
+                  const icon = campaignIcons[config?.icon || "gift"] || GiftIcon;
+                  return (
+                    <Link key={campaign._id} href={`/campaigns/${campaign._id}`}>
+                      <div className="flex items-center gap-3 rounded-md border border-border/60 p-3 transition-colors hover:bg-muted/30">
+                        <div className={`flex size-8 shrink-0 items-center justify-center rounded-md bg-muted ${config?.color || ""}`}>
+                          <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{campaign.name}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {campaign.prospectCount} prospects
+                          </p>
+                        </div>
+                        <Badge
+                          variant={campaign.status === "active" ? "default" : "outline"}
+                          className="shrink-0 text-[10px]"
+                        >
+                          {campaign.status}
+                        </Badge>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             )}
           </div>
+
+          <Separator />
+
+          {/* Activity feed */}
+          <div>
+            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Activity</h2>
+            <Card>
+              <CardContent className="max-h-[400px] overflow-y-auto p-3">
+                <ActivityFeed limit={40} />
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </section>
 
-      {/* Stat cards */}
-      <StatsCards
-        totalProspects={total}
-        enriched={enriched}
-        matchEligible={matchEligible}
-        messagesSent={messagesSent}
-      />
-
-      {/* Pipeline funnel */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={TargetIcon}
-              strokeWidth={1.5}
-              className="size-4 text-muted-foreground"
-            />
-            <CardTitle className="text-sm">Pipeline</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2">
-            {pipelineSteps.map((step, i) => (
-              <div key={step.label} className="flex flex-1 items-center gap-2">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 shrink-0 rounded-full ${step.color}`}
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {step.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 pl-4 text-lg font-semibold">
-                    {step.count}
-                  </p>
+        {/* Right: Send schedule + stats */}
+        <div className="space-y-6">
+          {/* Pending review */}
+          {(metrics?.messagesDraft ?? 0) > 0 && (
+            <Card className="border-amber-500/20">
+              <CardContent className="flex items-center justify-between py-4">
+                <div>
+                  <p className="text-sm font-medium">{metrics?.messagesDraft} drafts</p>
+                  <p className="text-[11px] text-muted-foreground">Need your review</p>
                 </div>
-                {i < pipelineSteps.length - 1 && (
-                  <div className="h-px w-6 bg-border" />
-                )}
-              </div>
-            ))}
+                <Button size="sm" variant="outline" render={<Link href="/review" />}>
+                  Review
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Send schedule */}
+          <div>
+            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Send Schedule</h2>
+            <Card>
+              <CardContent className="max-h-[350px] overflow-y-auto p-3">
+                <SendCalendar />
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Quick stats */}
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Pipeline</h3>
+              <div className="space-y-2">
+                <StatRow label="Approved, pending send" value={metrics?.messagesApproved ?? 0} />
+                <StatRow label="Responses received" value={metrics?.responsesReceived ?? 0} />
+                <StatRow label="Total campaigns" value={metrics?.totalCampaigns ?? 0} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: number | string;
+  icon: IconSvgElement;
+  accent?: boolean;
+}) {
+  return (
+    <Card className={accent ? "border-primary/20" : ""}>
+      <CardContent className="flex items-center gap-3 py-4">
+        <div className={`flex size-9 shrink-0 items-center justify-center rounded-md ${accent ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+          <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4" />
+        </div>
+        <div>
+          <p className="text-xl font-semibold tabular-nums">{value}</p>
+          <p className="text-[11px] text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium tabular-nums">{value}</span>
     </div>
   );
 }

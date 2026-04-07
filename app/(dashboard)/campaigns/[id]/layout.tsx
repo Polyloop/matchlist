@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,8 +18,9 @@ import {
   ArrowLeft01Icon,
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
-import type { CampaignType, CampaignStatus } from "@/lib/supabase/types";
+import type { CampaignStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import type { Id } from "@/convex/_generated/dataModel";
 
 const campaignIcons: Record<string, IconSvgElement> = {
   gift: GiftIcon,
@@ -32,51 +34,24 @@ function statusVariant(status: CampaignStatus) {
   switch (status) {
     case "active": return "default" as const;
     case "draft": return "outline" as const;
-    case "completed": return "secondary" as const;
-    case "archived": return "secondary" as const;
-    default: return "outline" as const;
+    default: return "secondary" as const;
   }
 }
 
-interface CampaignData {
-  id: string;
-  name: string;
-  type: CampaignType;
-  status: CampaignStatus;
-  description: string | null;
-  prospect_count: number;
-}
-
-export default function CampaignLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function CampaignLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const pathname = usePathname();
-  const campaignId = params.id as string;
-  const [campaign, setCampaign] = useState<CampaignData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const campaignId = params.id as Id<"campaigns">;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/campaigns/${campaignId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCampaign(data.campaign);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId]);
+  const campaign = useQuery(api.campaigns.queries.get, { id: campaignId });
+  const loading = campaign === undefined;
 
-  useEffect(() => { load(); }, [load]);
-
-  // Determine active tab from pathname
   const basePath = `/campaigns/${campaignId}`;
   let activeTab = "table";
   if (pathname.endsWith("/import")) activeTab = "import";
+  else if (pathname.endsWith("/activity")) activeTab = "activity";
+  else if (pathname.endsWith("/schedule")) activeTab = "schedule";
+  else if (pathname.endsWith("/analytics")) activeTab = "analytics";
   else if (pathname.endsWith("/outreach")) activeTab = "outreach";
   else if (pathname.endsWith("/settings")) activeTab = "settings";
 
@@ -106,7 +81,6 @@ export default function CampaignLayout({
 
   return (
     <div className="space-y-6">
-      {/* Campaign Header */}
       <div>
         <Button variant="ghost" size="sm" render={<Link href="/campaigns" />} className="mb-3">
           <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.5} className="mr-1 size-3.5" />
@@ -122,31 +96,24 @@ export default function CampaignLayout({
               <Badge variant={statusVariant(campaign.status)}>{campaign.status}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              {config?.label} &middot; {campaign.prospect_count} prospect{campaign.prospect_count !== 1 ? "s" : ""}
+              {config?.label} &middot; {campaign.prospectCount} prospect{campaign.prospectCount !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
       </div>
 
-      {/* Tab Navigation */}
       <Tabs value={activeTab}>
         <TabsList>
-          <TabsTrigger value="table" render={<Link href={basePath} />}>
-            Table
-          </TabsTrigger>
-          <TabsTrigger value="import" render={<Link href={`${basePath}/import`} />}>
-            Import
-          </TabsTrigger>
-          <TabsTrigger value="outreach" render={<Link href={`${basePath}/outreach`} />}>
-            Outreach
-          </TabsTrigger>
-          <TabsTrigger value="settings" render={<Link href={`${basePath}/settings`} />}>
-            Settings
-          </TabsTrigger>
+          <TabsTrigger value="table" render={<Link href={basePath} />}>Table</TabsTrigger>
+          <TabsTrigger value="import" render={<Link href={`${basePath}/import`} />}>Import</TabsTrigger>
+          <TabsTrigger value="activity" render={<Link href={`${basePath}/activity`} />}>Activity</TabsTrigger>
+          <TabsTrigger value="schedule" render={<Link href={`${basePath}/schedule`} />}>Schedule</TabsTrigger>
+          <TabsTrigger value="analytics" render={<Link href={`${basePath}/analytics`} />}>Analytics</TabsTrigger>
+          <TabsTrigger value="outreach" render={<Link href={`${basePath}/outreach`} />}>Outreach</TabsTrigger>
+          <TabsTrigger value="settings" render={<Link href={`${basePath}/settings`} />}>Settings</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {/* Page Content */}
       {children}
     </div>
   );

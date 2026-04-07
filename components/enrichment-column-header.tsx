@@ -1,7 +1,7 @@
 "use client";
 
 import { getEnrichmentType } from "@/lib/enrichments";
-import type { EnrichmentResultStatus } from "@/lib/supabase/types";
+import type { EnrichmentResultStatus } from "@/lib/types";
 
 interface EnrichmentColumnHeaderProps {
   enrichmentType: string;

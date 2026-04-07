@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import {
   type ColumnDef,
-  type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
   type RowSelectionState,
   flexRender,
   getCoreRowModel,
@@ -33,24 +33,12 @@ import { DataTableColumnHeader } from "@/components/prospects/data-table-column-
 import { EnrichmentCell } from "@/components/enrichment-cell";
 import { EnrichmentColumnHeader } from "@/components/enrichment-column-header";
 import { EnrichmentDetailPanel } from "@/components/enrichment-detail-panel";
-import { useEnrichmentRealtime } from "@/hooks/use-enrichment-realtime";
+import { ExportButton } from "@/components/export-button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Upload04Icon, PlayIcon } from "@hugeicons/core-free-icons";
-import type {
-  CampaignEnrichmentConfig,
-  EnrichmentResult,
-  EnrichmentResultStatus,
-} from "@/lib/supabase/types";
-// Ensure all enrichment types are registered
 import "@/lib/enrichments";
-import { getEnrichmentType, getDisplayValue } from "@/lib/enrichments";
-
-interface ProspectRow {
-  id: string;
-  name: string;
-  email: string | null;
-  employer: string | null;
-}
+import type { Id } from "@/convex/_generated/dataModel";
+import type { EnrichmentResultStatus } from "@/lib/types";
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -60,76 +48,31 @@ function getInitials(name: string): string {
 
 export default function CampaignTablePage() {
   const params = useParams();
-  const campaignId = params.id as string;
+  const campaignId = params.id as Id<"campaigns">;
 
-  const [prospects, setProspects] = useState<ProspectRow[]>([]);
-  const [enrichmentConfigs, setEnrichmentConfigs] = useState<CampaignEnrichmentConfig[]>([]);
-  const [enrichmentResults, setEnrichmentResults] = useState<EnrichmentResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  // All three queries are reactive — cells update automatically
+  const prospects = useQuery(api.prospects.queries.list, { campaignId });
+  const enrichmentConfigs = useQuery(api.campaigns.queries.getEnrichmentConfigs, { campaignId });
+  const enrichmentResults = useQuery(api.campaigns.queries.getEnrichmentResults, { campaignId });
+
+  const runColumn = useMutation(api.enrichments.mutations.runColumn);
+  const retryEnrichment = useMutation(api.enrichments.mutations.retry);
+  const rerunPipeline = useMutation(api.pipeline.actions.rerunPipeline);
+
+  const loading = prospects === undefined;
+
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-
-  // Detail panel state
-  const [detailResult, setDetailResult] = useState<EnrichmentResult | null>(null);
+  const [detailResult, setDetailResult] = useState<NonNullable<typeof enrichmentResults>[number] | null>(null);
   const [detailProspectName, setDetailProspectName] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
 
-  // Load data
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [prospectsRes, configsRes, resultsRes] = await Promise.all([
-        fetch(`/api/campaigns/${campaignId}/prospects?limit=200`),
-        fetch(`/api/campaigns/${campaignId}/enrichment-configs`),
-        fetch(`/api/campaigns/${campaignId}/enrichment-results`),
-      ]);
-
-      if (prospectsRes.ok) {
-        const data = await prospectsRes.json();
-        setProspects(data.prospects ?? []);
-      }
-      if (configsRes.ok) {
-        const data = await configsRes.json();
-        setEnrichmentConfigs(data.configs ?? []);
-      }
-      if (resultsRes.ok) {
-        const data = await resultsRes.json();
-        setEnrichmentResults(data.results ?? []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Realtime updates
-  const handleRealtimeUpdate = useCallback((updated: EnrichmentResult) => {
-    setEnrichmentResults((prev) => {
-      const idx = prev.findIndex(
-        (r) =>
-          r.prospect_id === updated.prospect_id &&
-          r.enrichment_type === updated.enrichment_type,
-      );
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = updated;
-        return next;
-      }
-      return [...prev, updated];
-    });
-  }, []);
-
-  useEnrichmentRealtime(campaignId, handleRealtimeUpdate);
-
-  // Build lookup: prospectId -> enrichmentType -> EnrichmentResult
+  // Build lookup: prospectId -> enrichmentType -> result
   const resultsMap = useMemo(() => {
-    const map = new Map<string, Map<string, EnrichmentResult>>();
-    for (const r of enrichmentResults) {
-      if (!map.has(r.prospect_id)) map.set(r.prospect_id, new Map());
-      map.get(r.prospect_id)!.set(r.enrichment_type, r);
+    const map = new Map<string, Map<string, NonNullable<typeof enrichmentResults>[number]>>();
+    for (const r of enrichmentResults ?? []) {
+      if (!map.has(r.prospectId)) map.set(r.prospectId, new Map());
+      map.get(r.prospectId)!.set(r.enrichmentType, r);
     }
     return map;
   }, [enrichmentResults]);
@@ -137,46 +80,36 @@ export default function CampaignTablePage() {
   // Status counts per enrichment type
   const statusCounts = useMemo(() => {
     const counts: Record<string, Record<EnrichmentResultStatus, number>> = {};
-    for (const r of enrichmentResults) {
-      if (!counts[r.enrichment_type]) {
-        counts[r.enrichment_type] = { pending: 0, running: 0, success: 0, failed: 0 };
+    for (const r of enrichmentResults ?? []) {
+      if (!counts[r.enrichmentType]) {
+        counts[r.enrichmentType] = { pending: 0, running: 0, success: 0, failed: 0 };
       }
-      counts[r.enrichment_type][r.status]++;
+      counts[r.enrichmentType][r.status as EnrichmentResultStatus]++;
     }
     return counts;
   }, [enrichmentResults]);
 
-  // Run column enrichment
   async function handleRunColumn(enrichmentType: string) {
-    const res = await fetch("/api/enrichments/run-column", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ campaignId, enrichmentType }),
-    });
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      const data = await runColumn({ campaignId, enrichmentType });
       toast.success(`Queued ${data.queued} prospects for ${enrichmentType.replace(/_/g, " ")}`);
-      loadData();
-    } else {
+    } catch {
       toast.error("Failed to start enrichment");
     }
   }
 
-  // Retry failed enrichment
-  async function handleRetry(resultId: string) {
-    const res = await fetch("/api/enrichments/retry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resultId }),
-    });
-    if (res.ok) {
+  async function handleRetry(resultId: Id<"enrichmentResults">) {
+    try {
+      await retryEnrichment({ resultId });
       toast.success("Retry queued");
+    } catch {
+      toast.error("Failed to retry");
     }
   }
 
   // Build columns dynamically
-  const columns = useMemo((): ColumnDef<ProspectRow>[] => {
-    const staticCols: ColumnDef<ProspectRow>[] = [
+  const columns = useMemo((): ColumnDef<NonNullable<typeof prospects>[number]>[] => {
+    const staticCols: ColumnDef<NonNullable<typeof prospects>[number]>[] = [
       {
         id: "select",
         header: ({ table }) => (
@@ -184,14 +117,12 @@ export default function CampaignTablePage() {
             checked={table.getIsAllPageRowsSelected()}
             indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
             onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
-            aria-label="Select all"
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(checked) => row.toggleSelected(!!checked)}
-            aria-label="Select row"
           />
         ),
         enableSorting: false,
@@ -201,66 +132,57 @@ export default function CampaignTablePage() {
       {
         accessorKey: "name",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
-        cell: ({ row }) => {
-          const name = row.getValue("name") as string;
-          return (
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                {getInitials(name)}
-              </span>
-              <span className="font-medium">{name}</span>
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              {getInitials(row.getValue("name") as string)}
+            </span>
+            <span className="font-medium">{row.getValue("name") as string}</span>
+          </div>
+        ),
       },
       {
         accessorKey: "email",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Email" />,
         cell: ({ row }) => (
-          <span className="text-muted-foreground">{row.getValue("email") || "—"}</span>
+          <span className="text-muted-foreground">{(row.getValue("email") as string) || "—"}</span>
         ),
       },
     ];
 
-    // Dynamic enrichment columns from campaign config
-    const enrichmentCols: ColumnDef<ProspectRow>[] = enrichmentConfigs
+    const enrichmentCols: ColumnDef<NonNullable<typeof prospects>[number]>[] = (enrichmentConfigs ?? [])
       .filter((c) => c.enabled)
-      .sort((a, b) => a.column_order - b.column_order)
-      .map((config): ColumnDef<ProspectRow> => ({
-        id: `enrichment_${config.enrichment_type}`,
+      .sort((a, b) => a.columnOrder - b.columnOrder)
+      .map((config) => ({
+        id: `enrichment_${config.enrichmentType}`,
         header: () => (
           <div className="flex items-center gap-2">
             <EnrichmentColumnHeader
-              enrichmentType={config.enrichment_type}
-              statusCounts={statusCounts[config.enrichment_type]}
-              totalRows={prospects.length}
+              enrichmentType={config.enrichmentType}
+              statusCounts={statusCounts[config.enrichmentType]}
+              totalRows={(prospects ?? []).length}
             />
             <Button
               variant="ghost"
               size="icon-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRunColumn(config.enrichment_type);
-              }}
-              title={`Run ${config.enrichment_type.replace(/_/g, " ")} for all rows`}
+              onClick={(e) => { e.stopPropagation(); handleRunColumn(config.enrichmentType); }}
+              title={`Run ${config.enrichmentType.replace(/_/g, " ")}`}
             >
               <HugeiconsIcon icon={PlayIcon} strokeWidth={1.5} className="size-3" />
             </Button>
           </div>
         ),
-        cell: ({ row }) => {
-          const prospectId = row.original.id;
-          const result = resultsMap.get(prospectId)?.get(config.enrichment_type);
-
+        cell: ({ row }: { row: { original: NonNullable<typeof prospects>[number] } }) => {
+          const result = resultsMap.get(row.original._id)?.get(config.enrichmentType);
           return (
             <EnrichmentCell
-              enrichmentType={config.enrichment_type}
-              status={result?.status || null}
-              result={result?.result || null}
-              errorMessage={result?.error_message || null}
-              onRetry={result?.status === "failed" ? () => handleRetry(result.id) : undefined}
+              enrichmentType={config.enrichmentType}
+              status={(result?.status as EnrichmentResultStatus) || null}
+              result={(result?.result as Record<string, unknown>) || null}
+              errorMessage={result?.errorMessage || null}
+              onRetry={result?.status === "failed" ? () => handleRetry(result._id) : undefined}
               onClick={result?.status === "success" ? () => {
-                setDetailResult(result);
+                setDetailResult(result as typeof detailResult);
                 setDetailProspectName(row.original.name);
                 setDetailOpen(true);
               } : undefined}
@@ -272,17 +194,15 @@ export default function CampaignTablePage() {
       }));
 
     return [...staticCols, ...enrichmentCols];
-  }, [enrichmentConfigs, resultsMap, statusCounts, prospects.length]);
+  }, [enrichmentConfigs, resultsMap, statusCounts, prospects]);
 
   const table = useReactTable({
-    data: prospects,
+    data: prospects ?? [],
     columns,
-    state: { sorting, columnFilters, columnVisibility, rowSelection },
+    state: { sorting, rowSelection },
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -299,7 +219,7 @@ export default function CampaignTablePage() {
     );
   }
 
-  if (prospects.length === 0) {
+  if ((prospects ?? []).length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <div className="flex size-16 items-center justify-center rounded-full bg-muted">
@@ -307,9 +227,7 @@ export default function CampaignTablePage() {
         </div>
         <div>
           <p className="text-lg font-medium">No prospects in this campaign</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Import a CSV to add prospects to this campaign
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Import a CSV to add prospects</p>
         </div>
         <Button render={<Link href={`/campaigns/${campaignId}/import`} />}>
           Import Prospects
@@ -320,21 +238,32 @@ export default function CampaignTablePage() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            try {
+              const r = await rerunPipeline({ campaignId });
+              toast.success(`Pipeline re-started for ${r.triggered} prospects`);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Failed to re-run");
+            }
+          }}
+        >
+          <HugeiconsIcon icon={PlayIcon} strokeWidth={1.5} className="mr-1.5 size-3.5" />
+          Re-run Pipeline
+        </Button>
+        <ExportButton campaignId={campaignId} />
+      </div>
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    colSpan={header.colSpan}
-                    style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
-                    className="sticky top-0 bg-background"
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  <TableHead key={header.id} colSpan={header.colSpan} style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }} className="sticky top-0 bg-background">
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>
                 ))}
               </TableRow>
@@ -353,26 +282,19 @@ export default function CampaignTablePage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                  No results.
-                </TableCell>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">No results.</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-
       <DataTablePagination table={table} />
-
       <EnrichmentDetailPanel
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        result={detailResult}
+        result={detailResult as any}
         prospectName={detailProspectName}
-        onRetry={(id) => {
-          handleRetry(id);
-          setDetailOpen(false);
-        }}
+        onRetry={(id) => { handleRetry(id as Id<"enrichmentResults">); setDetailOpen(false); }}
       />
     </div>
   );

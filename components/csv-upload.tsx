@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -95,6 +98,7 @@ interface CsvUploadProps {
 
 export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
   const router = useRouter();
+  const importMutation = useMutation(api.prospects.mutations.importProspects);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -108,7 +112,23 @@ export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
     total: number;
   } | null>(null);
 
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
+
   const currentStep = !file ? 0 : headers.length > 0 && Object.values(mapping).some(Boolean) ? 2 : 1;
+
+  // Extract emails from preview data for duplicate check
+  const previewEmails = useMemo(() => {
+    const emailField = Object.entries(mapping).find(([, v]) => v === "email")?.[0];
+    if (!emailField) return [];
+    return preview.map((row) => row[emailField]).filter(Boolean);
+  }, [mapping, preview]);
+
+  const duplicates = useQuery(
+    api.prospects.duplicates.checkDuplicates,
+    previewEmails.length > 0
+      ? { emails: previewEmails, campaignId: campaignId ? campaignId as Id<"campaigns"> : undefined }
+      : "skip",
+  );
 
   const processFile = useCallback((f: File) => {
     setFile(f);
@@ -164,24 +184,51 @@ export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
     if (!file) return;
     setImporting(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("mapping", JSON.stringify(mapping));
-      if (campaignId) {
-        formData.append("campaign_id", campaignId);
-      }
-
-      const res = await fetch("/api/prospects/import", {
-        method: "POST",
-        body: formData,
+      // Parse CSV and apply mapping client-side
+      const csvText = await file.text();
+      const { data: csvRows } = Papa.parse<Record<string, string>>(csvText, {
+        header: true,
+        skipEmptyLines: true,
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        toast.error(data.error || "Import failed");
-        setResult(null);
+      const rows = csvRows.map((raw) => {
+        const mapped: Record<string, string> = {};
+        if (Object.keys(mapping).length > 0) {
+          for (const [csvCol, fieldName] of Object.entries(mapping)) {
+            if (raw[csvCol] !== undefined) mapped[fieldName] = raw[csvCol];
+          }
+        } else {
+          Object.assign(mapped, raw);
+        }
+        return {
+          name: mapped.name || "",
+          email: mapped.email || undefined,
+          linkedinUrl: mapped.linkedin_url || undefined,
+          employer: mapped.employer || undefined,
+          team: mapped.team || undefined,
+          campaign: mapped.campaign || undefined,
+        };
+      });
+
+      // Filter out duplicates if enabled
+      const duplicateEmails = new Set(
+        skipDuplicates && duplicates ? duplicates.map((d) => d.email) : [],
+      );
+      const filteredRows = duplicateEmails.size > 0
+        ? rows.filter((r) => !r.email || !duplicateEmails.has(r.email))
+        : rows;
+
+      if (filteredRows.length === 0) {
+        toast.error("All prospects are duplicates — nothing to import");
+        setImporting(false);
         return;
       }
+
+      const data = await importMutation({
+        campaignId: campaignId ? campaignId as Id<"campaigns"> : undefined,
+        filename: file.name,
+        rows: filteredRows,
+      });
 
       if (data.imported > 0 && data.batchId) {
         if (data.errors?.length > 0) {
@@ -342,6 +389,34 @@ export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
               </Table>
             </div>
           </div>
+
+          {/* Duplicate warning */}
+          {duplicates && duplicates.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                {duplicates.length} duplicate{duplicates.length !== 1 ? "s" : ""} found
+              </p>
+              <div className="mt-2 space-y-1">
+                {duplicates.slice(0, 5).map((d, i) => (
+                  <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
+                    {d.email} — already in {d.existingCampaignName || "another campaign"} ({d.existingProspectName})
+                  </p>
+                ))}
+                {duplicates.length > 5 && (
+                  <p className="text-xs text-amber-600">...and {duplicates.length - 5} more</p>
+                )}
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={skipDuplicates}
+                  onChange={(e) => setSkipDuplicates(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-amber-700 dark:text-amber-400">Skip duplicates on import</span>
+              </label>
+            </div>
+          )}
 
           <Button onClick={handleImport} disabled={importing} size="lg">
             {importing ? "Importing..." : "Import & Start Enrichment"}

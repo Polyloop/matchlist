@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
@@ -30,12 +31,10 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import type { CampaignType } from "@/lib/supabase/types";
 
 const mainNavItems = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardSquare01Icon },
-  { label: "Prospects", href: "/prospects", icon: UserGroupIcon },
-  { label: "Outreach", href: "/outreach", icon: MailSend01Icon },
+  { label: "Review", href: "/review", icon: MailSend01Icon },
 ];
 
 const campaignIcons: Record<string, IconSvgElement> = {
@@ -46,7 +45,7 @@ const campaignIcons: Record<string, IconSvgElement> = {
   package: PackageIcon,
 };
 
-const typeToIcon: Record<CampaignType, string> = {
+const typeToIcon: Record<string, string> = {
   donation_matching: "gift",
   grant_research: "search",
   corporate_sponsorship: "building",
@@ -54,36 +53,13 @@ const typeToIcon: Record<CampaignType, string> = {
   in_kind_donation: "package",
 };
 
-interface SidebarCampaign {
-  id: string;
-  name: string;
-  type: CampaignType;
-  status: string;
-}
-
 export function AppSidebar() {
   const pathname = usePathname();
-  const [campaigns, setCampaigns] = useState<SidebarCampaign[]>([]);
+  const campaigns = useQuery(api.campaigns.queries.list) ?? [];
 
-  const loadCampaigns = useCallback(async () => {
-    try {
-      const res = await fetch("/api/campaigns");
-      if (res.ok) {
-        const data = await res.json();
-        setCampaigns(
-          (data.campaigns ?? []).filter(
-            (c: SidebarCampaign) => c.status === "active" || c.status === "draft",
-          ),
-        );
-      }
-    } catch {
-      // Silently fail — sidebar should not break the page
-    }
-  }, []);
-
-  useEffect(() => {
-    loadCampaigns();
-  }, [loadCampaigns]);
+  const activeCampaigns = campaigns.filter(
+    (c) => c.status === "active" || c.status === "draft",
+  );
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + "/");
@@ -136,14 +112,14 @@ export function AppSidebar() {
           <SidebarGroupLabel>Campaigns</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {campaigns.map((campaign) => {
+              {activeCampaigns.map((campaign) => {
                 const iconKey = typeToIcon[campaign.type] || "gift";
                 const icon = campaignIcons[iconKey] || GiftIcon;
                 return (
-                  <SidebarMenuItem key={campaign.id}>
+                  <SidebarMenuItem key={campaign._id}>
                     <SidebarMenuButton
-                      render={<Link href={`/campaigns/${campaign.id}`} />}
-                      isActive={isActive(`/campaigns/${campaign.id}`)}
+                      render={<Link href={`/campaigns/${campaign._id}`} />}
+                      isActive={isActive(`/campaigns/${campaign._id}`)}
                       tooltip={campaign.name}
                     >
                       <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4" />

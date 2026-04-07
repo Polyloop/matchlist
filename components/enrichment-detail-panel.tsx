@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getEnrichmentType } from "@/lib/enrichments";
-import type { EnrichmentResult } from "@/lib/supabase/types";
+import type { EnrichmentResult } from "@/lib/types";
 
 interface EnrichmentDetailPanelProps {
   open: boolean;

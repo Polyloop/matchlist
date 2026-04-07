@@ -1,0 +1,140 @@
+import { v } from "convex/values";
+import { mutation } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { Id } from "../_generated/dataModel";
+import { requireOrg } from "../lib/auth";
+
+export const importProspects = mutation({
+  args: {
+    campaignId: v.optional(v.id("campaigns")),
+    filename: v.optional(v.string()),
+    rows: v.array(
+      v.object({
+        name: v.string(),
+        email: v.optional(v.string()),
+        linkedinUrl: v.optional(v.string()),
+        employer: v.optional(v.string()),
+        team: v.optional(v.string()),
+        campaign: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrg(ctx);
+
+    // Create import batch
+    const batchId = await ctx.db.insert("importBatches", {
+      orgId,
+      campaignId: args.campaignId,
+      sourceFilename: args.filename,
+    });
+
+    const imported: string[] = [];
+    const errors: Array<{ row: number; message: string }> = [];
+
+    // Cache for typed lists
+    const listCache = new Map<string, Id<"prospectLists">>();
+
+    async function resolveListId(type: "team" | "campaign", name: string | undefined): Promise<Id<"prospectLists"> | undefined> {
+      if (!name?.trim()) return undefined;
+      const trimmed = name.trim();
+      const cacheKey = `${type}:${trimmed}`;
+      const cached = listCache.get(cacheKey);
+      if (cached) return cached;
+
+      const existing = await ctx.db
+        .query("prospectLists")
+        .withIndex("by_org_type_name", (q) =>
+          q.eq("orgId", orgId).eq("type", type).eq("name", trimmed),
+        )
+        .first();
+
+      if (existing) {
+        listCache.set(cacheKey, existing._id);
+        return existing._id;
+      }
+
+      const listId = await ctx.db.insert("prospectLists", {
+        orgId,
+        name: trimmed,
+        type,
+      });
+      listCache.set(cacheKey, listId);
+      return listId;
+    }
+
+    for (let i = 0; i < args.rows.length; i++) {
+      try {
+        const row = args.rows[i];
+        if (!row.name?.trim()) {
+          errors.push({ row: i + 1, message: "Name is required" });
+          continue;
+        }
+
+        const teamListId = await resolveListId("team", row.team);
+        const campaignListId = await resolveListId("campaign", row.campaign);
+
+        const prospectId = await ctx.db.insert("prospects", {
+          orgId,
+          campaignId: args.campaignId,
+          importBatchId: batchId,
+          name: row.name.trim(),
+          email: row.email || undefined,
+          linkedinUrl: row.linkedinUrl || undefined,
+          employer: row.employer || undefined,
+          teamListId,
+          campaignListId,
+          matchEligible: false,
+        });
+
+        // Create enrichment job
+        await ctx.db.insert("enrichmentJobs", {
+          orgId,
+          campaignId: args.campaignId,
+          prospectId,
+          stage: "pending",
+        });
+
+        imported.push(prospectId as string);
+      } catch (error) {
+        errors.push({
+          row: i + 1,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    // Auto-start the pipeline if we have a campaign and prospects
+    if (args.campaignId && imported.length > 0) {
+      const prospectIds = imported.map((id) => id as unknown as Id<"prospects">);
+      await ctx.scheduler.runAfter(0, internal.pipeline.engine.startPipeline, {
+        campaignId: args.campaignId,
+        orgId,
+        prospectIds,
+      });
+    }
+
+    return { batchId, imported: imported.length, errors, total: args.rows.length };
+  },
+});
+
+export const reEnrich = mutation({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrg(ctx);
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect || prospect.orgId !== orgId) throw new Error("Not found");
+
+    // Reset enrichment job
+    const job = await ctx.db
+      .query("enrichmentJobs")
+      .withIndex("by_org_prospect", (q) =>
+        q.eq("orgId", orgId).eq("prospectId", args.prospectId),
+      )
+      .first();
+
+    if (job) {
+      await ctx.db.patch(job._id, { stage: "pending", errorMessage: undefined });
+    }
+  },
+});

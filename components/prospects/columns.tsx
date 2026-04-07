@@ -13,7 +13,7 @@ import { DataTableColumnHeader } from "./data-table-column-header";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import { PipelineBadge } from "@/components/pipeline-badge";
-import type { EnrichmentStage } from "@/lib/supabase/types";
+import type { EnrichmentStage } from "@/lib/types";
 
 export interface ProspectRow {
   id: string;

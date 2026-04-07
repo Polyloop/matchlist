@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import type { EnrichmentStage } from "@/lib/supabase/types";
+import type { EnrichmentStage } from "@/lib/types";
 
 const stageConfig: Record<EnrichmentStage, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "Pending", variant: "outline" },
