@@ -38,8 +38,8 @@ export default defineSchema({
   campaignSettings: defineTable({
     campaignId: v.id("campaigns"),
     autoSendEnabled: v.boolean(),
-    warmUpThreshold: v.number(),
-    warmUpApproved: v.number(),
+    warmUpThreshold: v.optional(v.number()),  // deprecated, kept for data compat
+    warmUpApproved: v.optional(v.number()),   // deprecated, kept for data compat
     confidenceThreshold: v.number(),
     dailySendLimit: v.number(),
     sendWindowStart: v.number(),
@@ -75,6 +75,7 @@ export default defineSchema({
     employerMatchRatio: v.optional(v.number()),
     employerMatchCap: v.optional(v.number()),
     matchEligible: v.boolean(),
+    donorScore: v.optional(v.number()),
   })
     .index("by_org", ["orgId"])
     .index("by_campaign", ["campaignId"])
@@ -127,6 +128,8 @@ export default defineSchema({
     openedAt: v.optional(v.number()),
     respondedAt: v.optional(v.number()),
     sequenceStep: v.optional(v.number()),
+    replyTo: v.optional(v.id("outreachMessages")),
+    isReply: v.optional(v.boolean()),
   })
     .index("by_org", ["orgId"])
     .index("by_campaign", ["campaignId"])
@@ -191,4 +194,26 @@ export default defineSchema({
   })
     .index("by_list", ["listId"])
     .index("by_prospect", ["prospectId"]),
+
+  // CRM connections
+  crmConnections: defineTable({
+    orgId: v.id("organizations"),
+    provider: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    instanceUrl: v.string(),
+    lastSyncAt: v.optional(v.number()),
+    syncEnabled: v.boolean(),
+    syncConfig: v.optional(v.any()),
+  }).index("by_org", ["orgId"]),
+
+  crmSyncLog: defineTable({
+    orgId: v.id("organizations"),
+    connectionId: v.id("crmConnections"),
+    direction: v.union(v.literal("push"), v.literal("pull")),
+    entityType: v.string(),
+    entityId: v.string(),
+    status: v.union(v.literal("success"), v.literal("failed")),
+    details: v.optional(v.string()),
+  }).index("by_connection", ["connectionId"]),
 });

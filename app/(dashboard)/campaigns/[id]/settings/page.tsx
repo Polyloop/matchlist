@@ -164,18 +164,6 @@ export default function CampaignSettingsPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-medium">Warm-up Progress</label>
-                <p className="text-[11px] text-muted-foreground mb-2">
-                  {settings.warmUpApproved} of {settings.warmUpThreshold} messages manually approved
-                </p>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${Math.min(100, (settings.warmUpApproved / settings.warmUpThreshold) * 100)}%` }}
-                  />
-                </div>
-              </div>
             </CardContent>
           </Card>
 

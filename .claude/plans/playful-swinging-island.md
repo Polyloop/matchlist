@@ -1,218 +1,278 @@
-# Plan: Response Detection, Duplicate Detection, Campaign Templates
+# Plan: AI Reply Suggestions, Website Scraping, Donor Scoring, CRM Sync
 
 ## Context
 
-Three killer features to move the platform from "sender" to "conversation manager": detecting when prospects reply, preventing embarrassing duplicate outreach, and reducing onboarding friction with pre-built campaign templates.
+4 remaining killer features. We already built response detection (#1), campaign templates (#4), and duplicate detection (#6). Now building the rest:
+- **#2** AI reply suggestions — close the conversation loop
+- **#3** Website scraping enrichment via Firecrawl — richer personalisation
+- **#5** Donor potential scoring — prioritise high-value prospects
+- **#7** CRM sync — Salesforce NPSP first
 
 ---
 
-## 1. Response Detection
+## 1. AI Reply Suggestions
 
-**Goal:** When a prospect replies to an outreach email, the platform detects it, surfaces it in the Review inbox, pauses the follow-up sequence, and notifies the user.
-
-### How it works
-
-Resend doesn't provide reply detection via webhooks — it only tracks delivered/opened/bounced. Two approaches:
-
-**Approach A: Reply-To webhook (recommended for now)**
-- Set a unique `Reply-To` header per message: `reply+{messageId}@yourdomain.com`
-- Configure an inbound email handler (Resend supports inbound, or use a catch-all mailbox with webhook forwarding)
-- When a reply arrives, the `+{messageId}` tells us which outreach message it's responding to
-
-**Approach B: Simpler — manual "Mark as Responded" button**
-- Add a "Mark as Responded" action in the Review inbox detail pane
-- User clicks it when they see a reply in their email
-- This is low-tech but ships immediately and covers 90% of the need
-
-**Plan: Build both.** Button ships now, inbound email wiring is a follow-up.
+**Goal:** When a response is marked (via "Mark as Responded"), AI drafts a reply using the full conversation context. User reviews, edits, and sends from the Review inbox.
 
 ### Schema changes
 
-No new tables needed. Existing fields:
-- `outreachMessages.respondedAt` — already exists
-- `outreachSequenceSteps.status: "responded"` — already exists
+Add to `outreachMessages` schema:
+```
+replyTo: v.optional(v.id("outreachMessages")),  // links reply to original message
+isReply: v.optional(v.boolean()),
+```
+
+Add new table for conversation threads:
+```
+conversations: defineTable({
+  orgId: v.id("organizations"),
+  campaignId: v.id("campaigns"),
+  prospectId: v.id("prospects"),
+  messageIds: v.array(v.id("outreachMessages")),  // ordered thread
+})
+  .index("by_prospect", ["prospectId"])
+  .index("by_campaign", ["campaignId"]),
+```
 
 ### Convex changes
 
-**`convex/outreach/mutations.ts`** — Add `markResponded` mutation:
-- Sets `respondedAt = Date.now()` on the message
-- Cancels all future sequence steps for this prospect (set status to "responded")
-- Cancels any pending Cronlet tasks for this prospect's follow-ups
-- Logs activity: "Response received from {name}"
+**`convex/outreach/mutations.ts`** — Update `markResponded`:
+- After marking responded, schedule AI reply generation
+- `ctx.scheduler.runAfter(0, internal.pipeline.replyGenerator.generateReply, { ... })`
 
-**`convex/pipeline/helpers.ts`** — Add `cancelProspectFollowUps` internal mutation:
-- Query `outreachSequenceSteps` by prospect, status "scheduled"
-- Set each to "responded"
-- If `cronletTaskId` exists, pause the Cronlet task
+**`convex/pipeline/replyGenerator.ts`** (new) — Internal action:
+- Fetch the original outreach message + all enrichment data
+- Fetch prospect info
+- Call Claude via AI SDK with conversation context:
+  - System: "You are replying to a prospect who responded to your outreach. Draft a brief, helpful reply."
+  - User: "Original message: [...]\nThe prospect has responded (we don't have the reply text yet, but they engaged). Write a warm follow-up that moves the conversation forward."
+- Create a new `outreachMessages` record with `isReply: true`, `replyTo: originalMessageId`, status "draft"
+- Log activity: "AI reply drafted for {name}"
+
+**`convex/outreach/queries.ts`** — Update `list`:
+- Include `replyTo` and `isReply` in returned data
+- Group replies with their parent message
 
 ### UI changes
 
-**`components/review/message-detail.tsx`** — Add "Mark as Responded" button:
-- Shows on sent messages that don't have `respondedAt`
-- Green button with check icon
-- On click: calls `markResponded`, shows toast
+**`components/review/message-detail.tsx`**:
+- When "Mark as Responded" is clicked and succeeds, show a loading state: "Drafting reply..."
+- After the reply draft appears (reactive via useQuery), show it below the original message in a thread view
+- Reply draft has the same Edit/Approve/Send controls
+- Thread view: original message (dimmed) → "Prospect responded" divider → AI draft reply
 
-**`components/review/message-list.tsx`** — Add "responded" status:
-- New badge style: blue with "Responded" label
-- Left border: blue
-
-**Status tabs in message list** — Add "Responded" tab
-
-**Dashboard** — `analytics/queries.ts` `global` query already counts `responded`. No changes needed.
-
-**Activity feed** — Response events already logged by the mutation.
+**`components/review/message-list.tsx`**:
+- Messages with `isReply: true` show a "Reply" badge
+- Reply messages grouped under their parent (indented or with a thread indicator)
 
 ---
 
-## 2. Duplicate Detection
+## 2. Website Scraping Enrichment (Firecrawl)
 
-**Goal:** When importing prospects, detect if the same person (by email) already exists in another campaign or the same campaign, and warn the user before importing.
+**Goal:** New enrichment type `website_intelligence` that scrapes a company's website and extracts CSR info, news, about page, and company values. Fed into AI message generation for deeper personalisation.
 
-### How it works
+### Setup
 
-**On import:**
-1. Before inserting prospects, scan the import batch for duplicates:
-   - Within the batch itself (same email appears twice in the CSV)
-   - Against existing prospects in the same campaign
-   - Against existing prospects in other campaigns for this org
-2. Surface duplicates to the user with options:
-   - Skip duplicates
-   - Import anyway (create separate records)
-   - Merge (update existing record with new data)
-
-**On the prospects table:**
-- Show a warning badge on prospects that share an email with another prospect in a different campaign
-
-### Schema changes
-
-Add an index to prospects for email lookup:
+```bash
+pnpm add @mendable/firecrawl-js
 ```
-prospects.index("by_org_email", ["orgId", "email"])
+
+Firecrawl API key stored in org settings: `FIRECRAWL_API_KEY`
+
+### Enrichment type registration
+
+**`lib/enrichments/types/website-intelligence.ts`** (new):
+```typescript
+registerEnrichmentType({
+  type: "website_intelligence",
+  label: "Website Intel",
+  description: "Scrape company website for CSR, news, and values",
+  displayKey: "summary",
+});
 ```
 
 ### Convex changes
 
-**`convex/prospects/queries.ts`** — Add `checkDuplicates` query:
-```typescript
-args: { orgId, emails: string[] }
-returns: { email: string, existingCampaigns: string[], prospectId: string }[]
+**`convex/pipeline/runner.ts`** — Add `website_intelligence` case to `executeEnrichment`:
+```
+1. Get FIRECRAWL_API_KEY from org settings
+2. Get company website URL (from prospect.employer or enrichment result)
+3. Call Firecrawl /extract endpoint with schema:
+   {
+     csr_programmes: "string[]",
+     matching_gift_info: "string",
+     volunteer_programmes: "string",
+     company_values: "string[]",
+     recent_news: "string[]",
+     about_summary: "string",
+     leadership: "string[]",
+   }
+4. Return structured result
 ```
 
-**`convex/prospects/mutations.ts`** — Update `importProspects`:
-- Before import, run duplicate check
-- Return duplicates in the response alongside imported count
-- Add `skipDuplicates` arg (boolean) — if true, skip emails that already exist in same campaign
+**Fallback:** If no Firecrawl key, try to construct a company URL from employer name (`https://{employer.toLowerCase().replace(/\s+/g, '')}.com`) and scrape with a basic fetch + AI extraction.
 
-### UI changes
+### Pipeline integration
 
-**`components/csv-upload.tsx`** — After column mapping (step 2), before final import (step 3):
-- Run duplicate check against the mapped email column
-- If duplicates found, show a warning card:
-  - "3 prospects already exist in other campaigns"
-  - List each with: name, email, campaign name
-  - Options: "Skip Duplicates" / "Import Anyway"
-- Store the user's choice and pass to import mutation
+Add `website_intelligence` as an optional enrichment step for all campaign types. Insert it early in the chain (after employer_lookup, before AI message generation) so the scraped data feeds into the AI prompt.
 
-**Campaign Table tab** — Show a small warning icon next to prospect name if they exist in multiple campaigns. Tooltip shows which other campaigns.
+**`lib/campaigns/types.ts`** — Update default enrichments for donation_matching:
+```
+{ enrichment_type: "linkedin_profile", column_order: 0 },
+{ enrichment_type: "employer_lookup", column_order: 1 },
+{ enrichment_type: "website_intelligence", column_order: 2 },  // NEW
+{ enrichment_type: "match_programme", column_order: 3 },
+{ enrichment_type: "ai_message", column_order: 4 },
+```
+
+Similar for other campaign types — add after company_research/employer_lookup.
+
+### Settings UI
+
+**`components/settings-form.tsx`** — Add Firecrawl to API key fields:
+```
+{ key: "FIRECRAWL_API_KEY", label: "Website Intelligence", description: "Powered by Firecrawl", icon: GlobeIcon }
+```
 
 ---
 
-## 3. Campaign Templates (Playbooks)
+## 3. Donor Potential Scoring
 
-**Goal:** Pre-built campaign configurations with sample data, prompt tuning, and sequence settings. User selects a template instead of starting from scratch.
+**Goal:** AI scores each prospect on likelihood to convert (0-100). Score visible as a column in the campaign table, sortable. Based on all available enrichment data.
 
-### Template structure
+### Approach
 
-Each template includes:
-- Campaign type (donation_matching, etc.)
-- Name suggestion
-- Description
-- Pre-tuned enrichment config (which steps, in what order)
-- Campaign settings overrides (send window, follow-up config, confidence threshold)
-- Sample CSV data (optional, for demo)
-- Custom prompt instructions (appended to the AI system prompt)
+New enrichment type `donor_score` that runs after all other enrichments complete. Uses Claude to analyse all enrichment results and assign a score with reasoning.
 
-### Where templates live
+### Enrichment type registration
 
-**`lib/campaigns/templates.ts`** — Static template definitions (no DB needed):
-
+**`lib/enrichments/types/donor-score.ts`** (new):
 ```typescript
-interface CampaignTemplate {
-  id: string;
-  name: string;
-  description: string;
-  campaignType: CampaignType;
-  tags: string[];
-  settings: Partial<CampaignSettings>;
-  promptInstructions?: string;  // Extra instructions appended to AI prompt
-  sampleData?: Array<Record<string, string>>;  // Sample CSV rows for preview
-}
+registerEnrichmentType({
+  type: "donor_score",
+  label: "Score",
+  description: "AI-scored likelihood to convert based on all enrichment data",
+  displayKey: "score",
+  formatValue: (value) => `${value}/100`,
+});
 ```
-
-**Templates to ship:**
-
-1. **Spring Gala Follow-Up** (donation_matching)
-   - "Reach out to gala attendees about employer matching gift programmes"
-   - Settings: follow-ups on, 5-day delay, 2 max, confidence 75%
-   - Prompt: reference the gala, warm tone
-
-2. **Year-End Giving Push** (donation_matching)
-   - "End-of-year campaign targeting donors whose employers match gifts"
-   - Settings: higher daily limit (60), urgency in follow-ups
-   - Prompt: reference tax deadline, year-end giving
-
-3. **Corporate Build Day** (volunteer_matching)
-   - "Find companies for team volunteer build days"
-   - Settings: follow-ups on, 7-day delay
-   - Prompt: propose specific dates, team size options
-
-4. **Annual Report Sponsors** (corporate_sponsorship)
-   - "Secure sponsors for the annual report"
-   - Settings: confidence 80%, 3 follow-ups
-   - Prompt: mention visibility in report, donor recognition
-
-5. **Foundation Grant Pipeline** (grant_research)
-   - "Research and apply to community foundations"
-   - Settings: no auto-send (LOIs need careful review)
-   - Prompt: formal tone, evidence-based
-
-6. **Office Supply Drive** (in_kind_donation)
-   - "Request office supplies and materials from local businesses"
-   - Settings: follow-ups on, 5-day delay
-   - Prompt: be specific about needs, mention tax deduction
-
-### UI changes
-
-**Campaign creation wizard** (`app/(dashboard)/campaigns/new/page.tsx`):
-
-Currently: Step 1 = choose type → Step 2 = name → Step 3 = review
-
-New flow: Step 1 = **choose template or start blank** → Step 2 = name (pre-filled from template) → Step 3 = review (shows template settings)
-
-Step 1 redesign:
-- Two sections: "Start from a template" (grid of template cards) and "Start blank" (the existing type selector)
-- Template cards show: name, description, campaign type badge, tags
-- Selecting a template pre-fills: type, name, description, settings overrides, prompt instructions
-- "Start blank" expands to show the 5 type cards as before
-
-**Campaign settings** — If created from template, show the `promptInstructions` as an editable field in settings. This gets appended to the AI system prompt.
 
 ### Convex changes
 
-**`convex/campaigns/mutations.ts`** — Update `create` to accept optional `templateId` and `promptInstructions`:
-- `promptInstructions` stored in `campaignSettings` (add field to schema)
-- Settings overrides applied from template
+**`convex/pipeline/runner.ts`** — Add `donor_score` case to `executeEnrichment`:
+- This is different from other enrichments — it reads ALL previous enrichment results for this prospect
+- Calls Claude with a scoring prompt:
+  ```
+  System: "Score this prospect 0-100 on likelihood to engage with our outreach. Consider: employer size, match programme generosity, role seniority, CSR activity, website intelligence. Return JSON: { score: number, reasoning: string, signals: string[] }"
 
-**`convex/pipeline/ai/templates.ts`** — If `promptInstructions` exist on campaign settings, append them to the system prompt.
+  User: "Prospect: {name}, {employer}, {email}\nEnrichment data: {all results}"
+  ```
+- Uses `generateObject` from AI SDK with a Zod schema for type-safe structured output
+- Returns `{ score: 85, reasoning: "Large employer with active match programme...", signals: ["match_eligible", "csr_active", "senior_role"] }`
 
-**`convex/pipeline/runner.ts`** — Fetch `promptInstructions` from campaign settings and pass to prompt context.
+### Pipeline integration
 
-### Schema addition
-
-Add to `campaignSettings`:
+Add as the LAST enrichment step before `ai_message`:
 ```
-promptInstructions: v.optional(v.string()),
+{ enrichment_type: "donor_score", column_order: N-1 },
+{ enrichment_type: "ai_message", column_order: N },
 ```
+
+The score also feeds into the AI message prompt — higher-scored prospects get more tailored messages.
+
+### Also update prospect record
+
+When donor_score completes, write the score back to a new field on the prospect for easy sorting:
+- Add `donorScore: v.optional(v.number())` to prospects schema
+- Pipeline updates prospect after scoring
+
+### UI
+
+- Score column in campaign table shows as a number with color coding:
+  - 80+ green
+  - 60-79 amber
+  - <60 muted
+- Table sortable by score
+- Campaign analytics shows score distribution chart
+
+---
+
+## 4. CRM Sync — Salesforce NPSP
+
+**Goal:** Two-way sync with Salesforce Non-Profit Success Pack. Push outreach activity to Salesforce, pull contact data from Salesforce.
+
+### Approach
+
+Build a generic CRM sync framework with Salesforce as the first adapter. This lets us add HubSpot, Bloomerang etc. later.
+
+### Schema
+
+```
+crmConnections: defineTable({
+  orgId: v.id("organizations"),
+  provider: v.string(),  // "salesforce", "hubspot", etc.
+  accessToken: v.string(),
+  refreshToken: v.string(),
+  instanceUrl: v.string(),  // e.g. https://yourorg.my.salesforce.com
+  lastSyncAt: v.optional(v.number()),
+  syncEnabled: v.boolean(),
+  syncConfig: v.optional(v.any()),  // provider-specific config
+}).index("by_org", ["orgId"]),
+
+crmSyncLog: defineTable({
+  orgId: v.id("organizations"),
+  connectionId: v.id("crmConnections"),
+  direction: v.union(v.literal("push"), v.literal("pull")),
+  entityType: v.string(),  // "contact", "activity", "opportunity"
+  entityId: v.string(),
+  status: v.union(v.literal("success"), v.literal("failed")),
+  details: v.optional(v.string()),
+}).index("by_connection", ["connectionId"]),
+```
+
+### OAuth flow
+
+Salesforce uses OAuth 2.0. Need:
+1. **Connected App** in Salesforce with callback URL
+2. **OAuth redirect route** — Next.js API route (one of the few we need to keep): `/app/api/auth/salesforce/route.ts`
+   - GET: Redirects to Salesforce OAuth authorize URL
+   - Callback receives auth code, exchanges for access + refresh tokens
+   - Stores tokens in `crmConnections`
+
+Since we deleted API routes, we'll use a Convex HTTP action for the callback:
+- `convex/http.ts` — Add `GET /auth/salesforce/callback`
+
+### Sync operations
+
+**`convex/crm/salesforce.ts`** (new) — Salesforce adapter:
+
+**Pull contacts:**
+- Query Salesforce NPSP Contact object
+- Map fields: Name, Email, Account (employer), Title, npe01__HomeEmail__c, etc.
+- Create/update prospects in Matchlist
+- Scheduled via Cronlet: daily pull at 6am
+
+**Push outreach activity:**
+- When a message is sent, create a Salesforce Task linked to the Contact
+- Fields: Subject, Description (message content), Status (Completed), ActivityDate
+- When a response is marked, update the Task
+
+**Push match data:**
+- When match_programme enrichment completes, update a custom field on the Contact: `Matching_Gift_Eligible__c`, `Matching_Gift_Ratio__c`
+
+### Settings UI
+
+**New "Integrations" section or tab in Settings:**
+- "Connect Salesforce" button → starts OAuth flow
+- Connected state shows: instance URL, last sync time, sync toggle
+- Disconnect button
+- Manual "Sync Now" button
+
+### Sync scheduling via Cronlet
+
+When connection is created:
+- Schedule recurring Cronlet task: `daily at 06:00` for pull sync
+- Push sync happens in real-time (triggered by mutations)
 
 ---
 
@@ -221,44 +281,58 @@ promptInstructions: v.optional(v.string()),
 ### Create
 | File | Purpose |
 |------|---------|
-| `lib/campaigns/templates.ts` | 6 pre-built campaign templates |
-| `convex/prospects/duplicates.ts` | Duplicate check query |
+| `convex/pipeline/replyGenerator.ts` | AI reply generation action |
+| `convex/crm/salesforce.ts` | Salesforce NPSP adapter (pull contacts, push activity) |
+| `lib/enrichments/types/website-intelligence.ts` | Firecrawl enrichment type |
+| `lib/enrichments/types/donor-score.ts` | AI scoring enrichment type |
 
 ### Modify
 | File | Change |
 |------|--------|
-| `convex/schema.ts` | Add `by_org_email` index on prospects, add `promptInstructions` to campaignSettings |
-| `convex/outreach/mutations.ts` | Add `markResponded` mutation |
-| `convex/pipeline/helpers.ts` | Add `cancelProspectFollowUps` mutation |
-| `convex/prospects/mutations.ts` | Add `skipDuplicates` arg to import, return duplicates |
-| `convex/campaigns/mutations.ts` | Accept `templateId` + `promptInstructions` on create |
-| `convex/pipeline/ai/templates.ts` | Append `promptInstructions` to system prompt |
-| `convex/pipeline/runner.ts` | Fetch + pass `promptInstructions` |
-| `components/review/message-detail.tsx` | Add "Mark as Responded" button |
-| `components/review/message-list.tsx` | Add "Responded" status badge + tab + blue border |
-| `components/csv-upload.tsx` | Duplicate detection step before import |
-| `app/(dashboard)/campaigns/new/page.tsx` | Template selection in step 1 |
+| `convex/schema.ts` | Add `replyTo`, `isReply` to outreachMessages. Add `conversations` table. Add `donorScore` to prospects. Add `crmConnections`, `crmSyncLog` tables. |
+| `convex/outreach/mutations.ts` | Update `markResponded` to schedule reply generation |
+| `convex/outreach/queries.ts` | Include reply threading data |
+| `convex/pipeline/runner.ts` | Add `website_intelligence` and `donor_score` cases to executeEnrichment |
+| `convex/http.ts` | Add Salesforce OAuth callback route |
+| `lib/campaigns/types.ts` | Add `website_intelligence` and `donor_score` to default enrichment chains |
+| `lib/enrichments/index.ts` | Register new enrichment types |
+| `components/settings-form.tsx` | Add Firecrawl API key field, Salesforce connect button |
+| `components/review/message-detail.tsx` | Thread view for replies, reply draft controls |
+| `components/review/message-list.tsx` | Reply badge, thread grouping |
+
+### Install
+```bash
+pnpm add @mendable/firecrawl-js jsforce  # Firecrawl + Salesforce SDK
+```
 
 ---
 
 ## Verification
 
-### Response Detection
-- [ ] "Mark as Responded" button shows on sent messages
-- [ ] Clicking it sets respondedAt, cancels follow-up sequences
-- [ ] Responded messages show blue badge in Review list
-- [ ] Activity feed shows "Response received" event
-- [ ] Dashboard response rate metric updates
+### AI Reply Suggestions
+- [ ] Mark message as responded → AI reply draft appears (reactive)
+- [ ] Reply shows in thread view below original message
+- [ ] Can edit, approve, and send the reply
+- [ ] Reply has `isReply: true` and `replyTo` pointing to original
 
-### Duplicate Detection
-- [ ] Importing a CSV with an email that exists in another campaign shows warning
-- [ ] "Skip Duplicates" removes them from import
-- [ ] "Import Anyway" creates separate records
-- [ ] Same email within one CSV is caught
+### Website Scraping
+- [ ] With Firecrawl key set, `website_intelligence` enrichment returns structured CSR/news/values data
+- [ ] Data visible in enrichment column cell
+- [ ] Data feeds into AI message generation (more personalised copy)
+- [ ] Without key, returns stub with note
 
-### Campaign Templates
-- [ ] Campaign creation shows template grid before blank type selection
-- [ ] Selecting a template pre-fills name, type, description, settings
-- [ ] Template prompt instructions appear in campaign settings
-- [ ] AI messages use template-specific instructions
-- [ ] All 6 templates render correctly with descriptions and tags
+### Donor Scoring
+- [ ] `donor_score` enrichment runs after all others
+- [ ] Returns 0-100 score with reasoning
+- [ ] Score visible as a column, sortable
+- [ ] Color-coded: green (80+), amber (60-79), muted (<60)
+- [ ] Score feeds into AI message generation
+
+### Salesforce NPSP
+- [ ] "Connect Salesforce" initiates OAuth flow
+- [ ] Tokens stored securely
+- [ ] Pull sync imports contacts as prospects
+- [ ] Push sync creates Tasks for sent messages
+- [ ] Match data pushed to custom fields
+- [ ] Daily sync scheduled via Cronlet
+- [ ] Disconnect clears tokens

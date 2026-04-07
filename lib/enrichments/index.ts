@@ -29,6 +29,10 @@ import "./types/donation-programme";
 import "./types/procurement-contact";
 import "./types/request-generator";
 
+// Cross-campaign enrichments
+import "./types/website-intelligence";
+import "./types/donor-score";
+
 export {
   getEnrichmentType,
   getDisplayValue,

@@ -291,9 +291,9 @@ export const generateMessage = internalAction({
 
 async function executeEnrichment(
   enrichmentType: string,
-  prospect: { name: string; email?: string; employer?: string; linkedinUrl?: string },
+  prospect: { _id?: string; name: string; email?: string; employer?: string; linkedinUrl?: string },
   ctx: { runQuery: Function },
-  args: { orgId: string },
+  args: { orgId: string; campaignId: string; prospectIds?: string[] },
 ): Promise<Record<string, unknown>> {
   // Fetch org API keys for enrichments that need them
   const getKey = async (key: string): Promise<string | null> => {
@@ -412,6 +412,98 @@ async function executeEnrichment(
 
     case "procurement_contact":
       return { contact_name: null, note: "Requires enrichment API" };
+
+    case "website_intelligence": {
+      const firecrawlKey = await getKey("FIRECRAWL_API_KEY");
+      const companyName = prospect.employer || prospect.name;
+      if (!firecrawlKey) {
+        return { summary: companyName, note: "Firecrawl API key not configured" };
+      }
+      try {
+        // Construct likely company URL
+        const domain = companyName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
+        const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${firecrawlKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: `https://${domain}`,
+            formats: ["extract"],
+            extract: {
+              schema: {
+                type: "object",
+                properties: {
+                  csr_programmes: { type: "array", items: { type: "string" } },
+                  matching_gift_info: { type: "string" },
+                  volunteer_programmes: { type: "string" },
+                  company_values: { type: "array", items: { type: "string" } },
+                  recent_news: { type: "array", items: { type: "string" } },
+                  about_summary: { type: "string" },
+                },
+              },
+            },
+          }),
+        });
+        if (!response.ok) {
+          return { summary: companyName, note: `Firecrawl error: ${response.status}` };
+        }
+        const data = await response.json();
+        const extract = data?.data?.extract || {};
+        return {
+          summary: extract.about_summary || companyName,
+          ...extract,
+        };
+      } catch (e) {
+        return { summary: companyName, note: `Error: ${e instanceof Error ? e.message : "Unknown"}` };
+      }
+    }
+
+    case "donor_score": {
+      // Donor scoring reads ALL previous enrichment results and scores with AI
+      const allResults = prospect._id ? await ctx.runQuery(
+        internal.pipeline.helpers.getProspectEnrichmentResults,
+        { prospectId: prospect._id as any, campaignId: args.campaignId as any },
+      ) : [];
+
+      const enrichmentContext: Record<string, unknown> = {};
+      for (const r of allResults || []) {
+        if (r.status === "success" && r.result) {
+          enrichmentContext[r.enrichmentType] = r.result;
+        }
+      }
+
+      const apiKey = await getKey("ANTHROPIC_API_KEY");
+      if (!apiKey) {
+        return { score: 50, reasoning: "No API key — default score", signals: [] };
+      }
+
+      try {
+        const { createAnthropic: createProvider } = await import("@ai-sdk/anthropic");
+        const { generateText: genText } = await import("ai");
+        const provider = createProvider({ apiKey });
+        const { text } = await genText({
+          model: provider("claude-sonnet-4-20250514"),
+          system: `Score this prospect 0-100 on likelihood to engage with non-profit outreach. Consider employer size, match programme, CSR activity, role seniority. Return ONLY valid JSON: {"score": number, "reasoning": "string", "signals": ["string"]}`,
+          prompt: `Prospect: ${prospect.name}, ${prospect.employer || "unknown employer"}, ${prospect.email || ""}\n\nEnrichment data:\n${JSON.stringify(enrichmentContext, null, 2)}`,
+          maxOutputTokens: 300,
+        });
+
+        try {
+          const parsed = JSON.parse(text);
+          return {
+            score: Math.max(0, Math.min(100, parsed.score || 50)),
+            reasoning: parsed.reasoning || "",
+            signals: parsed.signals || [],
+          };
+        } catch {
+          return { score: 50, reasoning: "Failed to parse AI score", signals: [] };
+        }
+      } catch (e) {
+        return { score: 50, reasoning: `Error: ${e instanceof Error ? e.message : "Unknown"}`, signals: [] };
+      }
+    }
 
     default:
       return { note: `No handler for enrichment type: ${enrichmentType}` };

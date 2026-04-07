@@ -22,8 +22,10 @@ export const CAMPAIGN_TYPE_CONFIGS: Record<CampaignType, CampaignTypeConfig> = {
     defaultEnrichments: [
       { enrichment_type: "linkedin_profile", column_order: 0, enabled: true },
       { enrichment_type: "employer_lookup", column_order: 1, enabled: true },
-      { enrichment_type: "match_programme", column_order: 2, enabled: true },
-      { enrichment_type: "ai_message", column_order: 3, enabled: true },
+      { enrichment_type: "website_intelligence", column_order: 2, enabled: true },
+      { enrichment_type: "match_programme", column_order: 3, enabled: true },
+      { enrichment_type: "donor_score", column_order: 4, enabled: true },
+      { enrichment_type: "ai_message", column_order: 5, enabled: true },
     ],
   },
   grant_research: {
@@ -34,9 +36,11 @@ export const CAMPAIGN_TYPE_CONFIGS: Record<CampaignType, CampaignTypeConfig> = {
     color: "text-blue-600",
     defaultEnrichments: [
       { enrichment_type: "foundation_lookup", column_order: 0, enabled: true },
-      { enrichment_type: "grant_programmes", column_order: 1, enabled: true },
-      { enrichment_type: "eligibility_check", column_order: 2, enabled: true },
-      { enrichment_type: "loi_generator", column_order: 3, enabled: true },
+      { enrichment_type: "website_intelligence", column_order: 1, enabled: true },
+      { enrichment_type: "grant_programmes", column_order: 2, enabled: true },
+      { enrichment_type: "eligibility_check", column_order: 3, enabled: true },
+      { enrichment_type: "donor_score", column_order: 4, enabled: true },
+      { enrichment_type: "loi_generator", column_order: 5, enabled: true },
     ],
   },
   corporate_sponsorship: {
@@ -47,9 +51,11 @@ export const CAMPAIGN_TYPE_CONFIGS: Record<CampaignType, CampaignTypeConfig> = {
     color: "text-violet-600",
     defaultEnrichments: [
       { enrichment_type: "company_research", column_order: 0, enabled: true },
-      { enrichment_type: "csr_signals", column_order: 1, enabled: true },
-      { enrichment_type: "contact_enrichment", column_order: 2, enabled: true },
-      { enrichment_type: "proposal_generator", column_order: 3, enabled: true },
+      { enrichment_type: "website_intelligence", column_order: 1, enabled: true },
+      { enrichment_type: "csr_signals", column_order: 2, enabled: true },
+      { enrichment_type: "contact_enrichment", column_order: 3, enabled: true },
+      { enrichment_type: "donor_score", column_order: 4, enabled: true },
+      { enrichment_type: "proposal_generator", column_order: 5, enabled: true },
     ],
   },
   volunteer_matching: {
@@ -60,9 +66,11 @@ export const CAMPAIGN_TYPE_CONFIGS: Record<CampaignType, CampaignTypeConfig> = {
     color: "text-amber-600",
     defaultEnrichments: [
       { enrichment_type: "company_research", column_order: 0, enabled: true },
-      { enrichment_type: "volunteer_programme", column_order: 1, enabled: true },
-      { enrichment_type: "coordinator_lookup", column_order: 2, enabled: true },
-      { enrichment_type: "outreach_generator", column_order: 3, enabled: true },
+      { enrichment_type: "website_intelligence", column_order: 1, enabled: true },
+      { enrichment_type: "volunteer_programme", column_order: 2, enabled: true },
+      { enrichment_type: "coordinator_lookup", column_order: 3, enabled: true },
+      { enrichment_type: "donor_score", column_order: 4, enabled: true },
+      { enrichment_type: "outreach_generator", column_order: 5, enabled: true },
     ],
   },
   in_kind_donation: {
@@ -73,9 +81,11 @@ export const CAMPAIGN_TYPE_CONFIGS: Record<CampaignType, CampaignTypeConfig> = {
     color: "text-rose-600",
     defaultEnrichments: [
       { enrichment_type: "company_research", column_order: 0, enabled: true },
-      { enrichment_type: "donation_programme", column_order: 1, enabled: true },
-      { enrichment_type: "procurement_contact", column_order: 2, enabled: true },
-      { enrichment_type: "request_generator", column_order: 3, enabled: true },
+      { enrichment_type: "website_intelligence", column_order: 1, enabled: true },
+      { enrichment_type: "donation_programme", column_order: 2, enabled: true },
+      { enrichment_type: "procurement_contact", column_order: 3, enabled: true },
+      { enrichment_type: "donor_score", column_order: 4, enabled: true },
+      { enrichment_type: "request_generator", column_order: 5, enabled: true },
     ],
   },
 };

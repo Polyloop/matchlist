@@ -172,4 +172,12 @@
   [data-slot="badge"] {
     text-transform: capitalize;
   }
+  /* Allow sheet/dialog content to scroll */
+  [data-slot="sheet-content"],
+  [data-slot="dialog-content"] {
+    overflow-y: auto !important;
+  }
+  .base-ui-disable-scrollbar {
+    overflow: auto !important;
+  }
 }

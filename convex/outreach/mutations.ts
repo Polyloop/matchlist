@@ -113,6 +113,16 @@ export const markResponded = mutation({
       type: "response_received",
       message: `Response received from ${prospect?.name || "prospect"}`,
     });
+
+    // Schedule AI reply generation
+    if (msg.campaignId) {
+      await ctx.scheduler.runAfter(0, internal.pipeline.replyGenerator.generateReply, {
+        originalMessageId: args.id,
+        campaignId: msg.campaignId,
+        orgId,
+        prospectId: msg.prospectId,
+      });
+    }
   },
 });
 

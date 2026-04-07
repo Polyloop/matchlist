@@ -42,20 +42,20 @@ export default function CampaignAnalyticsPage() {
 
   // Outreach breakdown
   const outreachData = [
-    { name: "Draft", value: analytics.outreach.draft, color: "var(--color-muted-foreground)" },
-    { name: "Approved", value: analytics.outreach.approved, color: "var(--color-chart-2)" },
-    { name: "Sent", value: analytics.outreach.sent, color: "var(--color-chart-1)" },
-    { name: "Responded", value: analytics.outreach.responded, color: "var(--color-chart-3)" },
-    { name: "Failed", value: analytics.outreach.failed, color: "var(--color-destructive)" },
+    { name: "Draft", value: analytics.outreach.draft },
+    { name: "Approved", value: analytics.outreach.approved },
+    { name: "Sent", value: analytics.outreach.sent },
+    { name: "Responded", value: analytics.outreach.responded },
+    { name: "Failed", value: analytics.outreach.failed },
   ].filter((d) => d.value > 0);
 
-  const COLORS = [
-    "hsl(var(--muted-foreground))",
-    "hsl(var(--chart-2))",
-    "hsl(var(--chart-1))",
-    "hsl(var(--chart-3))",
-    "hsl(var(--destructive))",
-  ];
+  // Direct colors — oklch CSS vars don't work in Recharts
+  const COLORS = ["#888888", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444"];
+  const CHART_GREEN = "#10b981";
+  const CHART_AMBER = "#f59e0b";
+  const CHART_RED = "#ef4444";
+  const CHART_BLUE = "#3b82f6";
+  const CHART_MUTED = "#d1d5db";
 
   return (
     <div className="space-y-6">
@@ -86,27 +86,27 @@ export default function CampaignAnalyticsPage() {
                   <CartesianGrid
                     horizontal={false}
                     strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
+                    stroke="#e5e7eb"
                   />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="#6b7280" />
                   <YAxis
                     type="category"
                     dataKey="name"
                     width={100}
                     tick={{ fontSize: 11 }}
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="#6b7280"
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #e5e7eb",
                       borderRadius: "6px",
                       fontSize: "12px",
                     }}
                   />
-                  <Bar dataKey="success" stackId="a" fill="hsl(var(--chart-1))" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="pending" stackId="a" fill="hsl(var(--chart-4))" />
-                  <Bar dataKey="failed" stackId="a" fill="hsl(var(--destructive))" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="success" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="pending" stackId="a" fill="#f59e0b" />
+                  <Bar dataKey="failed" stackId="a" fill="#ef4444" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -132,7 +132,7 @@ export default function CampaignAnalyticsPage() {
                       innerRadius={45}
                       outerRadius={70}
                       strokeWidth={2}
-                      stroke="hsl(var(--background))"
+                      stroke="#ffffff"
                     >
                       {outreachData.map((_entry, index) => (
                         <Cell key={index} fill={COLORS[index % COLORS.length]} />
@@ -169,27 +169,27 @@ export default function CampaignAnalyticsPage() {
                   <CartesianGrid
                     vertical={false}
                     strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
+                    stroke="#e5e7eb"
                   />
                   <XAxis
                     dataKey="name"
                     tick={{ fontSize: 10 }}
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="#6b7280"
                     interval={0}
                     angle={-30}
                     textAnchor="end"
                     height={60}
                   />
-                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="#6b7280" />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #e5e7eb",
                       borderRadius: "6px",
                       fontSize: "12px",
                     }}
                   />
-                  <Bar dataKey="count" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

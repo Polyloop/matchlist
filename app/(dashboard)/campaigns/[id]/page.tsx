@@ -34,6 +34,7 @@ import { EnrichmentCell } from "@/components/enrichment-cell";
 import { EnrichmentColumnHeader } from "@/components/enrichment-column-header";
 import { EnrichmentDetailPanel } from "@/components/enrichment-detail-panel";
 import { ExportButton } from "@/components/export-button";
+import { ProspectDetailPanel } from "@/components/prospect-detail-panel";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Upload04Icon, PlayIcon } from "@hugeicons/core-free-icons";
 import "@/lib/enrichments";
@@ -66,6 +67,8 @@ export default function CampaignTablePage() {
   const [detailResult, setDetailResult] = useState<NonNullable<typeof enrichmentResults>[number] | null>(null);
   const [detailProspectName, setDetailProspectName] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedProspect, setSelectedProspect] = useState<NonNullable<typeof prospects>[number] | null>(null);
+  const [prospectPanelOpen, setProspectPanelOpen] = useState(false);
 
   // Build lookup: prospectId -> enrichmentType -> result
   const resultsMap = useMemo(() => {
@@ -272,7 +275,12 @@ export default function CampaignTablePage() {
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                  className="cursor-pointer"
+                  onClick={() => { setSelectedProspect(row.original); setProspectPanelOpen(true); }}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -295,6 +303,19 @@ export default function CampaignTablePage() {
         result={detailResult as any}
         prospectName={detailProspectName}
         onRetry={(id) => { handleRetry(id as Id<"enrichmentResults">); setDetailOpen(false); }}
+      />
+      <ProspectDetailPanel
+        open={prospectPanelOpen}
+        onOpenChange={setProspectPanelOpen}
+        prospect={selectedProspect ? {
+          _id: selectedProspect._id,
+          name: selectedProspect.name,
+          email: selectedProspect.email,
+          employer: selectedProspect.employer,
+          matchEligible: selectedProspect.matchEligible,
+          donorScore: (selectedProspect as any).donorScore,
+        } : null}
+        campaignId={campaignId}
       />
     </div>
   );

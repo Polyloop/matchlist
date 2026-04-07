@@ -147,8 +147,6 @@ export const createDefaultSettings = internalMutation({
       await ctx.db.insert("campaignSettings", {
         campaignId: args.campaignId,
         autoSendEnabled: false,
-        warmUpThreshold: 5,
-        warmUpApproved: 0,
         confidenceThreshold: 80,
         dailySendLimit: 40,
         sendWindowStart: 9,
