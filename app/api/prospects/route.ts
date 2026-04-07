@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const stage = searchParams.get("stage");
     const listId = searchParams.get("list_id");
     const batchId = searchParams.get("batch_id");
+    const campaignId = searchParams.get("campaign_id");
     const offset = (page - 1) * limit;
 
     const supabase = createAdminClient();
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
 
     if (batchId) {
       query = query.eq("import_batch_id", batchId);
+    }
+
+    if (campaignId) {
+      query = query.eq("campaign_id", campaignId);
     }
 
     if (prospectIdsInList !== null) {

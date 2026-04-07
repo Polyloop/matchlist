@@ -53,7 +53,10 @@ export function StatsCards({
       {stats.map((stat) => (
         <Card
           key={stat.title}
-          className={cn(stat.highlight && "ring-1 ring-accent/20")}
+          className={cn(
+            "transition-all duration-200 hover:shadow-md hover:-translate-y-0.5",
+            stat.highlight && "ring-1 ring-primary/20 hover:ring-primary/40",
+          )}
         >
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">

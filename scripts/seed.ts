@@ -50,7 +50,7 @@ async function seed() {
       .from("prospect_lists")
       .upsert(
         {
-          org_id: org.id,
+          org_id: org!.id,
           name,
           type,
         },

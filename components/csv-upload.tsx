@@ -89,7 +89,11 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
   );
 }
 
-export function CsvUpload() {
+interface CsvUploadProps {
+  campaignId?: string;
+}
+
+export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -163,6 +167,9 @@ export function CsvUpload() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("mapping", JSON.stringify(mapping));
+      if (campaignId) {
+        formData.append("campaign_id", campaignId);
+      }
 
       const res = await fetch("/api/prospects/import", {
         method: "POST",

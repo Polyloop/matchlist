@@ -10,6 +10,15 @@ export type EnrichmentStage =
 export type OutreachStatus = "draft" | "approved" | "sent" | "failed";
 export type ProspectListType = "segment" | "team" | "campaign";
 
+export type CampaignType =
+  | "donation_matching"
+  | "grant_research"
+  | "corporate_sponsorship"
+  | "volunteer_matching"
+  | "in_kind_donation";
+
+export type CampaignStatus = "draft" | "active" | "completed" | "archived";
+
 export interface Organization {
   id: string;
   clerk_org_id: string;
@@ -18,9 +27,32 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface Campaign {
+  id: string;
+  org_id: string;
+  name: string;
+  type: CampaignType;
+  status: CampaignStatus;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignEnrichmentConfig {
+  id: string;
+  campaign_id: string;
+  enrichment_type: string;
+  column_order: number;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Prospect {
   id: string;
   org_id: string;
+  campaign_id: string | null;
   name: string;
   email: string | null;
   linkedin_url: string | null;
@@ -46,6 +78,7 @@ export interface ProspectList {
 export interface ImportBatch {
   id: string;
   org_id: string;
+  campaign_id: string | null;
   source_filename: string | null;
   created_at: string;
   updated_at: string;
@@ -54,6 +87,7 @@ export interface ImportBatch {
 export interface EnrichmentJob {
   id: string;
   org_id: string;
+  campaign_id: string | null;
   prospect_id: string;
   stage: EnrichmentStage;
   error_message: string | null;
@@ -64,10 +98,26 @@ export interface EnrichmentJob {
 export interface OutreachMessage {
   id: string;
   org_id: string;
+  campaign_id: string | null;
   prospect_id: string;
   content: string;
   status: OutreachStatus;
   sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EnrichmentResultStatus = "pending" | "running" | "success" | "failed";
+
+export interface EnrichmentResult {
+  id: string;
+  prospect_id: string;
+  campaign_id: string;
+  org_id: string;
+  enrichment_type: string;
+  status: EnrichmentResultStatus;
+  result: Record<string, unknown> | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +129,21 @@ export type Database = {
         Row: Organization;
         Insert: Omit<Organization, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<Organization, "id">>;
+      };
+      campaigns: {
+        Row: Campaign;
+        Insert: Omit<Campaign, "id" | "created_at" | "updated_at" | "status"> & {
+          status?: CampaignStatus;
+        };
+        Update: Partial<Omit<Campaign, "id">>;
+      };
+      campaign_enrichment_configs: {
+        Row: CampaignEnrichmentConfig;
+        Insert: Omit<CampaignEnrichmentConfig, "id" | "created_at" | "updated_at"> & {
+          enabled?: boolean;
+          config?: Record<string, unknown>;
+        };
+        Update: Partial<Omit<CampaignEnrichmentConfig, "id">>;
       };
       prospects: {
         Row: Prospect;
@@ -111,6 +176,14 @@ export type Database = {
           sent_at?: string | null;
         };
         Update: Partial<Omit<OutreachMessage, "id">>;
+      };
+      enrichment_results: {
+        Row: EnrichmentResult;
+        Insert: Omit<EnrichmentResult, "id" | "created_at" | "updated_at" | "error_message" | "result"> & {
+          result?: Record<string, unknown> | null;
+          error_message?: string | null;
+        };
+        Update: Partial<Omit<EnrichmentResult, "id">>;
       };
     };
   };

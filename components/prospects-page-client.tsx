@@ -5,42 +5,21 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PipelineBadge } from "@/components/pipeline-badge";
 import { ProspectListsPanel } from "@/components/prospect-lists-panel";
 import { buttonVariants } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  MoreVerticalIcon,
-  Search01Icon,
-  Upload04Icon,
-} from "@hugeicons/core-free-icons";
-import type { EnrichmentStage } from "@/lib/supabase/types";
+import { Upload04Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
-interface ProspectRow {
-  id: string;
-  name: string;
-  email: string | null;
-  employer: string | null;
-  match_eligible: boolean;
-  enrichment_jobs: Array<{ stage: EnrichmentStage; error_message: string | null }>;
-}
+import { DataTable } from "@/components/prospects/data-table";
+import { getColumns, type ProspectRow } from "@/components/prospects/columns";
 
 interface ListOption {
   id: string;
@@ -48,76 +27,22 @@ interface ListOption {
   prospect_count: number;
 }
 
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return (parts[0]?.[0] || "?").toUpperCase();
-}
-
-function Checkbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={onChange}
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-sm border transition-colors",
-        checked
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-input hover:border-primary/50",
-      )}
-    >
-      {checked && (
-        <svg
-          width="10"
-          height="8"
-          viewBox="0 0 10 8"
-          fill="none"
-          className="text-current"
-        >
-          <path
-            d="M1 4L3.5 6.5L9 1"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </button>
-  );
-}
-
 export function ProspectsPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [prospects, setProspects] = useState<ProspectRow[]>([]);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<ProspectRow[]>([]);
   const [lists, setLists] = useState<ListOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
   const selectedBatchId = searchParams.get("batch_id");
 
   const loadProspects = useCallback(async () => {
     setLoading(true);
     try {
-      let url = "/api/prospects?limit=50";
-      if (selectedListId) {
-        url += `&list_id=${selectedListId}`;
-      }
-      if (selectedBatchId) {
-        url += `&batch_id=${selectedBatchId}`;
-      }
+      let url = "/api/prospects?limit=200";
+      if (selectedListId) url += `&list_id=${selectedListId}`;
+      if (selectedBatchId) url += `&batch_id=${selectedBatchId}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -140,40 +65,8 @@ export function ProspectsPageClient() {
     loadLists();
   }, [loadProspects]);
 
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [selectedBatchId]);
-
-  const filteredProspects = useMemo(() => {
-    if (!searchQuery.trim()) return prospects;
-    const q = searchQuery.toLowerCase();
-    return prospects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.email?.toLowerCase().includes(q) ||
-        p.employer?.toLowerCase().includes(q),
-    );
-  }, [prospects, searchQuery]);
-
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    if (selectedIds.size === filteredProspects.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredProspects.map((p) => p.id)));
-    }
-  }
-
   async function handleAssignToList(listId: string) {
-    const ids = Array.from(selectedIds);
+    const ids = selectedRows.map((r) => r.id);
     if (ids.length === 0) return;
 
     const res = await fetch(`/api/lists/${listId}/members`, {
@@ -185,7 +78,7 @@ export function ProspectsPageClient() {
     if (res.ok) {
       const data = await res.json();
       toast.success(`Added ${data.added} prospects to list`);
-      setSelectedIds(new Set());
+      setSelectedRows([]);
       loadLists();
     } else {
       toast.error("Failed to assign prospects");
@@ -198,13 +91,15 @@ export function ProspectsPageClient() {
     loadProspects();
   }
 
+  const columns = useMemo(() => getColumns(handleReEnrich), []);
+
   return (
     <div className="flex gap-6">
       <ProspectListsPanel
         selectedListId={selectedListId}
         onSelectList={(id) => {
           setSelectedListId(id);
-          setSelectedIds(new Set());
+          setSelectedRows([]);
         }}
       />
 
@@ -230,10 +125,10 @@ export function ProspectsPageClient() {
           </div>
         )}
 
-        {selectedIds.size > 0 && (
+        {selectedRows.length > 0 && (
           <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
             <span className="text-sm font-medium">
-              {selectedIds.size} selected
+              {selectedRows.length} selected
             </span>
             <DropdownMenu>
               <DropdownMenuTrigger className="inline-flex h-7 items-center rounded-md border bg-background px-2.5 text-xs font-medium hover:bg-muted">
@@ -259,27 +154,12 @@ export function ProspectsPageClient() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => setSelectedRows([])}
             >
               Clear
             </Button>
           </div>
         )}
-
-        {/* Search bar */}
-        <div className="relative">
-          <HugeiconsIcon
-            icon={Search01Icon}
-            strokeWidth={1.5}
-            className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            placeholder="Search prospects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
 
         {loading ? (
           <div className="space-y-2">
@@ -287,8 +167,7 @@ export function ProspectsPageClient() {
               <Skeleton key={i} className="h-12 w-full rounded-md" />
             ))}
           </div>
-        ) : filteredProspects.length === 0 && !searchQuery && !selectedListId && !selectedBatchId ? (
-          /* Empty state */
+        ) : prospects.length === 0 && !selectedListId && !selectedBatchId ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <div className="flex size-16 items-center justify-center rounded-full bg-muted">
               <HugeiconsIcon
@@ -303,109 +182,16 @@ export function ProspectsPageClient() {
                 Import a CSV to start finding matching gift opportunities
               </p>
             </div>
-            <Link
-              href="/prospects/import"
-              className={cn(buttonVariants())}
-            >
+            <Link href="/prospects/import" className={cn(buttonVariants())}>
               Import Your First List
             </Link>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={
-                      filteredProspects.length > 0 &&
-                      selectedIds.size === filteredProspects.length
-                    }
-                    onChange={toggleSelectAll}
-                  />
-                </TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Employer</TableHead>
-                <TableHead>Match</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredProspects.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    {searchQuery
-                      ? "No prospects match your search."
-                      : selectedListId
-                        ? "No prospects in this list."
-                        : "No prospects found."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredProspects.map((prospect) => {
-                  const job = prospect.enrichment_jobs?.[0];
-                  return (
-                    <TableRow key={prospect.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedIds.has(prospect.id)}
-                          onChange={() => toggleSelect(prospect.id)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2.5">
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                            {getInitials(prospect.name)}
-                          </span>
-                          <span className="font-medium">{prospect.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {prospect.email || "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {prospect.employer || "—"}
-                      </TableCell>
-                      <TableCell>
-                        {prospect.match_eligible ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="size-2 rounded-full bg-primary" />
-                            <span className="text-xs text-primary">
-                              Eligible
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {job && <PipelineBadge stage={job.stage} />}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                            <HugeiconsIcon
-                              icon={MoreVerticalIcon}
-                              strokeWidth={1.5}
-                              className="size-4"
-                            />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleReEnrich(prospect.id)}
-                            >
-                              Re-enrich
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={prospects}
+            onRowSelectionChange={setSelectedRows}
+          />
         )}
       </div>
     </div>

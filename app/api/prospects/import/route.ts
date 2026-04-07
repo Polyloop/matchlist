@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const mappingRaw = formData.get("mapping") as string | null;
+    const campaignId = formData.get("campaign_id") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
       .from("import_batches")
       .insert({
         org_id: orgId,
+        campaign_id: campaignId,
         source_filename: file.name,
       })
       .select("id")
@@ -118,6 +120,7 @@ export async function POST(request: Request) {
           .from("prospects")
           .insert({
             org_id: orgId,
+            campaign_id: campaignId,
             import_batch_id: batch.id,
             name: result.data.name,
             email: result.data.email ?? null,
@@ -140,6 +143,7 @@ export async function POST(request: Request) {
         // Create enrichment job
         const { error: jobError } = await supabase.from("enrichment_jobs").insert({
           org_id: orgId,
+          campaign_id: campaignId,
           prospect_id: prospect.id,
         });
 

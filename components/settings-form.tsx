@@ -7,46 +7,38 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  LinkedinIcon,
+  GiftIcon,
+  AiBeautifyIcon,
+  CheckmarkCircle01Icon,
+  Cancel01Icon,
+  Loading01Icon,
+} from "@hugeicons/core-free-icons";
 
 const API_KEY_FIELDS = [
   {
     key: "BRIGHT_DATA_API_KEY",
     label: "LinkedIn Enrichment",
-    description: "Powered by Bright Data — used to look up donor employment details",
+    description: "Powered by Bright Data — used to look up donor employment details from LinkedIn profiles",
+    icon: LinkedinIcon,
   },
   {
     key: "DOUBLE_THE_DONATION_API_KEY",
     label: "Matching Gift Database",
-    description: "Powered by Double the Donation — checks employer matching programs",
+    description: "Powered by Double the Donation — checks if employer has a matching gift programme",
+    icon: GiftIcon,
   },
   {
     key: "ANTHROPIC_API_KEY",
     label: "AI Message Writer",
-    description: "Powered by Claude — generates personalized outreach messages",
+    description: "Powered by Claude — generates personalised outreach messages tailored to each prospect",
+    icon: AiBeautifyIcon,
   },
 ];
-
-function StatusDot({ configured }: { configured: boolean }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span
-        className={cn(
-          "size-1.5 rounded-full",
-          configured ? "bg-primary" : "bg-amber-500",
-        )}
-      />
-      <span
-        className={cn(
-          "text-xs",
-          configured ? "text-primary" : "text-amber-600 dark:text-amber-400",
-        )}
-      >
-        {configured ? "Connected" : "Not set up"}
-      </span>
-    </span>
-  );
-}
 
 interface SettingsFormProps {
   orgName: string;
@@ -58,6 +50,8 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, "success" | "failed">>({});
 
   useEffect(() => {
     async function loadSettings() {
@@ -109,6 +103,36 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
     }
   }
 
+  async function handleTestConnection(key: string) {
+    setTestingKey(key);
+    setTestResults((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+    try {
+      const res = await fetch("/api/settings/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+
+      if (res.ok) {
+        setTestResults((prev) => ({ ...prev, [key]: "success" }));
+        toast.success("Connection successful");
+      } else {
+        setTestResults((prev) => ({ ...prev, [key]: "failed" }));
+        toast.error("Connection failed");
+      }
+    } catch {
+      setTestResults((prev) => ({ ...prev, [key]: "failed" }));
+      toast.error("Connection test failed");
+    } finally {
+      setTestingKey(null);
+    }
+  }
+
   return (
     <Tabs defaultValue="organization">
       <TabsList>
@@ -143,52 +167,97 @@ export function SettingsForm({ orgName: initialOrgName, clerkOrgId }: SettingsFo
         </Card>
       </TabsContent>
 
-      <TabsContent value="api-keys" className="mt-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Integrations</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              API keys are encrypted and stored securely. Enter a new value to
-              update, or leave the masked value to keep the existing key.
-            </p>
-            <Separator />
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : (
-              API_KEY_FIELDS.map((field) => {
-                const hasValue = !!apiKeys[field.key] && apiKeys[field.key] !== "";
-                return (
-                  <div key={field.key} className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">{field.label}</label>
-                      <StatusDot configured={hasValue} />
+      <TabsContent value="api-keys" className="mt-4 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          API keys are encrypted and stored securely. Enter a new value to
+          update, or leave the masked value to keep the existing key.
+        </p>
+
+        {loading ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="animate-pulse">
+                <CardContent className="h-32" />
+              </Card>
+            ))}
+          </div>
+        ) : (
+          API_KEY_FIELDS.map((field) => {
+            const hasValue = !!apiKeys[field.key] && apiKeys[field.key] !== "";
+            const isTesting = testingKey === field.key;
+            const testResult = testResults[field.key];
+
+            return (
+              <Card key={field.key} className={cn(
+                "transition-colors",
+                hasValue && "border-primary/20",
+              )}>
+                <CardContent>
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-lg",
+                      hasValue ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                    )}>
+                      <HugeiconsIcon icon={field.icon} strokeWidth={1.5} className="size-5" />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {field.description}
-                    </p>
-                    <Input
-                      type="password"
-                      value={apiKeys[field.key] || ""}
-                      onChange={(e) =>
-                        setApiKeys((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter API key"
-                      className="font-mono text-sm"
-                    />
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-medium">{field.label}</h3>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {field.description}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={hasValue ? "default" : "outline"}
+                          className="ml-2 shrink-0"
+                        >
+                          {hasValue ? "Connected" : "Not configured"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="password"
+                          value={apiKeys[field.key] || ""}
+                          onChange={(e) =>
+                            setApiKeys((prev) => ({
+                              ...prev,
+                              [field.key]: e.target.value,
+                            }))
+                          }
+                          placeholder="Enter API key"
+                          className="font-mono text-sm"
+                        />
+                        {hasValue && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleTestConnection(field.key)}
+                            disabled={isTesting}
+                            className="shrink-0"
+                          >
+                            {isTesting ? (
+                              <HugeiconsIcon icon={Loading01Icon} strokeWidth={1.5} className="mr-1 size-3.5 animate-spin" />
+                            ) : testResult === "success" ? (
+                              <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={1.5} className="mr-1 size-3.5 text-green-500" />
+                            ) : testResult === "failed" ? (
+                              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.5} className="mr-1 size-3.5 text-destructive" />
+                            ) : null}
+                            Test
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                );
-              })
-            )}
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save Integrations"}
-            </Button>
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+
+        <Button onClick={handleSave} disabled={saving} className="w-full">
+          {saving ? "Saving..." : "Save Integrations"}
+        </Button>
       </TabsContent>
 
       <TabsContent value="email" className="mt-4">
