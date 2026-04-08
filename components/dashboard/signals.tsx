@@ -29,7 +29,6 @@ export function SignalsPanel() {
 
   return (
     <div>
-      <h2 className="mb-3 text-sm font-medium text-muted-foreground">Signals</h2>
       <div className="flex flex-col gap-3">
         {signals.map((signal) => {
           const config = typeConfig[signal.type] || typeConfig.insight;

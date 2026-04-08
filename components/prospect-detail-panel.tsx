@@ -104,7 +104,15 @@ export function ProspectDetailPanel({ open, onOpenChange, prospectId }: Prospect
           </div>
         </div>
 
-        {/* Suggested action */}
+        {/* Why Now */}
+        {(profile as any).whyNow && (
+          <div className="border-b px-5 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Why Now</p>
+            <p className="text-xs leading-relaxed">{(profile as any).whyNow}</p>
+          </div>
+        )}
+
+        {/* Recommended action */}
         <div className="border-b px-5 py-3 bg-muted/20">
           <div className="flex items-center gap-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -114,9 +122,20 @@ export function ProspectDetailPanel({ open, onOpenChange, prospectId }: Prospect
               <p className="text-xs font-medium">{profile.suggestedAction}</p>
               <p className="text-[10px] text-muted-foreground">{profile.suggestedActionReason}</p>
             </div>
-            <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.5} className="size-3.5 text-muted-foreground" />
           </div>
         </div>
+
+        {/* Open loops */}
+        {(profile as any).openLoops?.length > 0 && (
+          <div className="border-b px-5 py-2">
+            {(profile as any).openLoops.map((loop: string, i: number) => (
+              <div key={i} className="flex items-center gap-2 py-1">
+                <span className="size-1.5 rounded-full bg-amber-400 shrink-0" />
+                <span className="text-[11px] text-amber-700">{loop}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="p-5 space-y-6">
           {/* Stats */}

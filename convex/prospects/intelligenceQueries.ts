@@ -137,18 +137,50 @@ export const getProfile = query({
     else if (openedMessages.length > 0) strength = "engaged";
     else if (sentMessages.length > 0) strength = "warm";
 
-    // Derive suggested action
+    // Build whyNow from relationship context
+    const whyNowParts: string[] = [];
+    if (prospect.role) whyNowParts.push(`${prospect.role} at ${prospect.employer || "unknown"}`);
+    else if (prospect.employer) whyNowParts.push(`At ${prospect.employer}`);
+    if (prospect.membershipStatus && prospect.membershipStatus !== "never" && prospect.membershipStatus !== "unknown") {
+      whyNowParts.push(`${prospect.membershipStatus} member${prospect.memberSince ? ` since ${prospect.memberSince}` : ""}`);
+    }
+    if (prospect.matchEligible) whyNowParts.push("employer matches donations");
+    if (prospect.lastEngagement) {
+      const daysSince = Math.round((Date.now() - new Date(prospect.lastEngagement).getTime()) / (24 * 60 * 60 * 1000));
+      if (daysSince > 365) whyNowParts.push(`last engaged ${Math.round(daysSince / 365)} years ago`);
+      else if (daysSince > 30) whyNowParts.push(`last engaged ${Math.round(daysSince / 30)} months ago`);
+    }
+    if (respondedMessages.length > 0) whyNowParts.push("responded to outreach");
+    else if (openedMessages.length > 0) whyNowParts.push("opened emails but hasn't responded");
+    if (prospect.notes) whyNowParts.push(prospect.notes.slice(0, 60));
+    const whyNow = whyNowParts.length > 0 ? whyNowParts.join(". ") + "." : null;
+
+    // Derive recommended action using scoring logic
+    const types = prospect.engagementTypes || [];
     let suggestedAction = "Run enrichment pipeline";
     let suggestedActionReason = "More data needed";
-    if (enrichments.length === 0) {
+
+    if (respondedMessages.length > 0 && messages.some((m) => m.status === "draft")) {
+      suggestedAction = "Follow up on response";
+      suggestedActionReason = "They responded — deepen the relationship";
+    } else if (prospect.membershipStatus === "lapsed") {
+      suggestedAction = "Renew membership";
+      suggestedActionReason = "Membership lapsed — a warm renewal could bring them back";
+    } else if (prospect.matchEligible && sentMessages.length === 0) {
+      suggestedAction = "Introduce matching gift";
+      suggestedActionReason = `${prospect.employer} matches donations — inform them about this opportunity`;
+    } else if (types.length >= 2 && sentMessages.length === 0) {
+      suggestedAction = "Reconnect";
+      suggestedActionReason = "Deeply engaged in the past but lost touch — reconnect before asking";
+    } else if (sentMessages.length > 0 && openedMessages.length > 0 && respondedMessages.length === 0) {
+      suggestedAction = "Share value";
+      suggestedActionReason = "Opened your email but didn't respond — share something valuable before another ask";
+    } else if (enrichments.length === 0) {
       suggestedAction = "Start pipeline";
       suggestedActionReason = "No enrichment data yet";
     } else if (messages.length === 0) {
-      suggestedAction = "Generate outreach message";
+      suggestedAction = "Generate outreach";
       suggestedActionReason = "Enrichment complete, ready for outreach";
-    } else if (sentMessages.length > 0 && respondedMessages.length === 0 && openedMessages.length > 0) {
-      suggestedAction = "Send follow-up";
-      suggestedActionReason = "Opened but hasn't responded";
     } else if (sentMessages.length > 0 && respondedMessages.length === 0) {
       suggestedAction = "Wait or follow up";
       suggestedActionReason = `Sent ${sentMessages.length} message(s), no response yet`;
@@ -163,12 +195,26 @@ export const getProfile = query({
       }
     }
 
+    // Open loops — things pending for this prospect
+    const openLoops: string[] = [];
+    const drafts = messages.filter((m) => m.status === "draft");
+    if (drafts.length > 0) openLoops.push(`${drafts.length} draft message(s) to review`);
+    if (respondedMessages.length > 0 && !messages.some((m) => m.replyTo)) openLoops.push("Response received — no follow-up sent yet");
+    const scheduledSteps = await ctx.db
+      .query("outreachSequenceSteps")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .collect();
+    const pendingSteps = scheduledSteps.filter((s) => s.status === "scheduled");
+    if (pendingSteps.length > 0) openLoops.push(`${pendingSteps.length} follow-up(s) scheduled`);
+
     return {
       ...prospect,
       signals,
       strength,
+      whyNow,
       suggestedAction,
       suggestedActionReason,
+      openLoops,
       enrichments: enrichments.map((e) => ({
         ...e,
         result: e.result as Record<string, unknown> | undefined,

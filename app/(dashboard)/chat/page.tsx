@@ -123,9 +123,6 @@ export default function ChatPage() {
         <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
           {visibleMessages.length === 0 && !isLoading && (
             <div className="flex flex-col items-center gap-6 pt-16 text-center">
-              <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
-                <HugeiconsIcon icon={AiBeautifyIcon} strokeWidth={1.5} className="size-8 text-primary" />
-              </div>
               <div className="space-y-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Hey, I'm Scout</h1>
                 <p className="max-w-md text-sm text-muted-foreground leading-relaxed">

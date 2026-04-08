@@ -1,268 +1,91 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { SendCalendar } from "@/components/dashboard/send-calendar";
-import { WelcomeHero } from "@/components/onboarding/welcome-hero";
-import { OnboardingChecklist } from "@/components/onboarding/checklist";
 import { SignalsPanel } from "@/components/dashboard/signals";
-import { AgentStatus } from "@/components/dashboard/agent-status";
-import { CAMPAIGN_TYPE_CONFIGS } from "@/lib/campaigns/types";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  PlusSignIcon,
-  Upload04Icon,
-  GiftIcon,
-  Search01Icon,
-  Building06Icon,
   UserGroupIcon,
-  PackageIcon,
-  TargetIcon,
   MailSend01Icon,
-  Rocket01Icon,
   ChartHistogramIcon,
-  ArrowRight01Icon,
+  MailOpen01Icon,
 } from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
-
-const campaignIcons: Record<string, IconSvgElement> = {
-  gift: GiftIcon,
-  search: Search01Icon,
-  building: Building06Icon,
-  people: UserGroupIcon,
-  package: PackageIcon,
-};
 
 export default function DashboardPage() {
-  const campaigns = useQuery(api.campaigns.queries.list);
   const metrics = useQuery(api.analytics.queries.global);
-  const onboarding = useQuery(api.onboarding.queries.getStatus);
-  const seed = useMutation(api.seed.run);
-  const loading = campaigns === undefined;
+  const schedule = useQuery(api.analytics.queries.sendSchedule, {});
 
-  // Brand new user — show welcome hero
-  if (onboarding && !onboarding.dismissed && onboarding.completedSteps === 0) {
-    return <WelcomeHero />;
+  // Group scheduled sends by day
+  const upcoming = (schedule ?? []).filter((s: any) => s.status === "scheduled");
+  const byDay = new Map<string, number>();
+  for (const s of upcoming) {
+    const day = new Date(s.scheduledAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    byDay.set(day, (byDay.get(day) || 0) + 1);
   }
+  const upcomingDays = Array.from(byDay.entries()).slice(0, 5);
 
   return (
-    <div className="space-y-8">
-      {/* Onboarding checklist */}
-      {onboarding && !onboarding.dismissed && !onboarding.allComplete && (
-        <OnboardingChecklist
-          steps={onboarding.steps}
-          completedSteps={onboarding.completedSteps}
-          totalSteps={onboarding.totalSteps}
-        />
-      )}
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Your campaign agent at a glance
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" render={<Link href="/campaigns" />}>
-            <HugeiconsIcon icon={Upload04Icon} strokeWidth={1.5} className="mr-1.5 size-3.5" />
-            Import
-          </Button>
-          <Button size="sm" render={<Link href="/campaigns/new" />}>
-            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={1.5} className="mr-1.5 size-3.5" />
-            New Campaign
-          </Button>
-          {/* TODO: Remove seed button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              try {
-                const r = await seed();
-                toast.success(`Seeded ${r.campaigns} campaigns, ${r.prospects} prospects`);
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Seed failed");
-              }
-            }}
-          >
-            Seed
-          </Button>
-        </div>
+    <div className="max-w-2xl mx-auto space-y-8 py-8 px-4">
+      {/* Key numbers */}
+      <div className="grid grid-cols-4 gap-3">
+        <MetricCard icon={UserGroupIcon} value={metrics?.totalProspects ?? 0} label="Prospects" />
+        <MetricCard icon={MailOpen01Icon} value={metrics?.messagesDraft ?? 0} label="To Review" href="/review" accent={(metrics?.messagesDraft ?? 0) > 0} />
+        <MetricCard icon={MailSend01Icon} value={metrics?.messagesSent ?? 0} label="Sent" />
+        <MetricCard icon={ChartHistogramIcon} value={`${metrics?.responseRate ?? 0}%`} label="Response" />
       </div>
 
-      {/* Metrics row */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <MetricCard
-          label="Active Campaigns"
-          value={metrics?.activeCampaigns ?? 0}
-          icon={TargetIcon}
-        />
-        <MetricCard
-          label="Total Prospects"
-          value={metrics?.totalProspects ?? 0}
-          icon={UserGroupIcon}
-        />
-        <MetricCard
-          label="Match Eligible"
-          value={metrics?.matchEligible ?? 0}
-          icon={Rocket01Icon}
-          accent
-        />
-        <MetricCard
-          label="Messages Sent"
-          value={metrics?.messagesSent ?? 0}
-          icon={MailSend01Icon}
-        />
-        <MetricCard
-          label="Response Rate"
-          value={`${metrics?.responseRate ?? 0}%`}
-          icon={ChartHistogramIcon}
-        />
-      </div>
-
-      {/* Main content: two columns */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left: Activity feed */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Campaign cards */}
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-muted-foreground">Campaigns</h2>
-              <Button variant="ghost" size="xs" render={<Link href="/campaigns" />}>
-                View all
-                <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.5} className="ml-1 size-3" />
-              </Button>
-            </div>
-
-            {loading ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[1, 2].map((i) => (
-                  <div key={i} className="h-20 animate-pulse rounded-md border bg-muted/30" />
-                ))}
-              </div>
-            ) : (campaigns ?? []).length === 0 ? (
-              <Card>
-                <CardContent className="flex items-center justify-between py-6">
-                  <p className="text-sm text-muted-foreground">No campaigns yet</p>
-                  <Button size="sm" render={<Link href="/campaigns/new" />}>Create Campaign</Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {(campaigns ?? []).slice(0, 4).map((campaign) => {
-                  const config = CAMPAIGN_TYPE_CONFIGS[campaign.type];
-                  const icon = campaignIcons[config?.icon || "gift"] || GiftIcon;
-                  return (
-                    <Link key={campaign._id} href={`/campaigns/${campaign._id}`}>
-                      <div className="flex items-center gap-3 rounded-md border border-border/60 p-3 transition-colors hover:bg-muted/30">
-                        <div className={`flex size-8 shrink-0 items-center justify-center rounded-md bg-muted ${config?.color || ""}`}>
-                          <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-3.5" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{campaign.name}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {campaign.prospectCount} prospects
-                          </p>
-                        </div>
-                        <Badge
-                          variant={campaign.status === "active" ? "default" : "outline"}
-                          className="shrink-0 text-[10px]"
-                        >
-                          {campaign.status}
-                        </Badge>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <Separator />
-
-          {/* Activity feed */}
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Activity</h2>
-            <Card>
-              <CardContent className="max-h-[400px] overflow-y-auto p-3">
-                <ActivityFeed limit={40} />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Right: Send schedule + stats */}
-        <div className="space-y-6">
-          {/* Pending review */}
-          {(metrics?.messagesDraft ?? 0) > 0 && (
-            <Card className="border-amber-500/20">
-              <CardContent className="flex items-center justify-between py-4">
-                <div>
-                  <p className="text-sm font-medium">{metrics?.messagesDraft} drafts</p>
-                  <p className="text-[11px] text-muted-foreground">Need your review</p>
-                </div>
-                <Button size="sm" variant="outline" render={<Link href="/review" />}>
-                  Review
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Agent status */}
-          <AgentStatus />
-
-          {/* Signals */}
-          <SignalsPanel />
-
-          {/* Send schedule */}
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Send Schedule</h2>
-            <Card>
-              <CardContent className="max-h-[350px] overflow-y-auto p-3">
-                <SendCalendar />
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Quick stats */}
+      {/* Coming up */}
+      <div>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Coming Up</h2>
+        {upcomingDays.length === 0 ? (
           <Card>
-            <CardContent className="space-y-3 p-4">
-              <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Pipeline</h3>
-              <div className="space-y-2">
-                <StatRow label="Approved, pending send" value={metrics?.messagesApproved ?? 0} />
-                <StatRow label="Responses received" value={metrics?.responsesReceived ?? 0} />
-                <StatRow label="Total campaigns" value={metrics?.totalCampaigns ?? 0} />
-              </div>
+            <CardContent className="text-center py-8">
+              <p className="text-sm text-muted-foreground">Nothing scheduled</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Approved messages will appear here with send times</p>
             </CardContent>
           </Card>
-        </div>
+        ) : (
+          <Card>
+            <CardContent>
+              <div className="space-y-2">
+                {upcomingDays.map(([day, count]) => (
+                  <div key={day} className="flex items-center justify-between">
+                    <span className="text-sm">{day}</span>
+                    <Badge variant="secondary" className="text-xs tabular-nums">
+                      {count} email{count !== 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+              {upcoming.length > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-3">
+                  {upcoming.length} total scheduled
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Needs attention */}
+      <div>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Needs Attention</h2>
+        <SignalsPanel />
       </div>
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: number | string;
-  icon: IconSvgElement;
-  accent?: boolean;
+function MetricCard({ icon, value, label, href, accent }: {
+  icon: any; value: number | string; label: string; href?: string; accent?: boolean;
 }) {
-  return (
-    <Card className={accent ? "border-primary/20" : ""}>
+  const content = (
+    <Card className={accent ? "border-amber-200" : ""}>
       <CardContent className="flex items-center gap-3 py-4">
-        <div className={`flex size-9 shrink-0 items-center justify-center rounded-md ${accent ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+        <div className={`flex size-9 shrink-0 items-center justify-center rounded-md ${accent ? "bg-amber-50 text-amber-600" : "bg-muted text-muted-foreground"}`}>
           <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4" />
         </div>
         <div>
@@ -272,13 +95,7 @@ function MetricCard({
       </CardContent>
     </Card>
   );
-}
 
-function StatRow({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
-    </div>
-  );
+  if (href) return <Link href={href}>{content}</Link>;
+  return content;
 }
