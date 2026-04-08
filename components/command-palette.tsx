@@ -67,9 +67,9 @@ export function CommandPalette() {
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => runCommand(() => router.push("/prospects/import"))}>
+          <CommandItem onSelect={() => runCommand(() => router.push("/campaigns/new"))}>
             <HugeiconsIcon icon={Upload04Icon} strokeWidth={1.5} className="mr-2 size-4" />
-            Import CSV
+            New Campaign & Import
           </CommandItem>
           <CommandItem onSelect={() => runCommand(() => router.push("/campaigns/new"))}>
             <HugeiconsIcon icon={PlusSignIcon} strokeWidth={1.5} className="mr-2 size-4" />

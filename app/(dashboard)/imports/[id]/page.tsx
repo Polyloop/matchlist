@@ -30,7 +30,7 @@ export default function ImportBatchRevealPage() {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <p className="text-lg font-medium">Import batch not found</p>
-        <Button variant="outline" render={<Link href="/prospects" />}>Back to Prospects</Button>
+        <Button variant="outline" render={<Link href="/campaigns" />}>Back to Campaigns</Button>
       </div>
     );
   }

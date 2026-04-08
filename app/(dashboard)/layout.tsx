@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { CommandPalette } from "@/components/command-palette";
+import { ActivityIndicator } from "@/components/activity-indicator";
 
 export default function DashboardLayout({
   children,
@@ -19,7 +20,10 @@ export default function DashboardLayout({
             <Separator orientation="vertical" className="mr-2 h-4" />
             <OrganizationSwitcher />
           </div>
-          <UserButton />
+          <div className="flex items-center gap-2">
+            <ActivityIndicator />
+            <UserButton />
+          </div>
         </header>
         <main className="flex-1 p-6">{children}</main>
       </SidebarInset>

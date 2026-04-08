@@ -60,6 +60,14 @@ export const runEnrichmentBatch = internalAction({
           });
         }
 
+        // Write back donor score to prospect if applicable
+        if (args.enrichmentType === "donor_score" && result.score != null) {
+          await ctx.runMutation(internal.pipeline.helpers.updateProspectScore, {
+            prospectId,
+            score: result.score as number,
+          });
+        }
+
         // Log activity
         await ctx.runMutation(internal.activity.mutations.log, {
           orgId: args.orgId,
@@ -305,43 +313,12 @@ async function executeEnrichment(
 
   switch (enrichmentType) {
     case "linkedin_profile": {
-      const apiKey = await getKey("BRIGHT_DATA_API_KEY");
-      if (!apiKey || !prospect.linkedinUrl) {
-        return {
-          profile_url: prospect.linkedinUrl || null,
-          scraped: false,
-          ...(prospect.employer ? { employer: prospect.employer } : {}),
-          note: !apiKey ? "Bright Data API key not configured" : "No LinkedIn URL provided",
-        };
-      }
-      // Call Bright Data LinkedIn scraping API
-      try {
-        const response = await fetch("https://api.brightdata.com/datasets/v3/trigger", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            deliver_to: "api",
-            input: [{ url: prospect.linkedinUrl }],
-          }),
-        });
-        if (!response.ok) {
-          return { profile_url: prospect.linkedinUrl, scraped: false, note: `Bright Data error: ${response.status}` };
-        }
-        const data = await response.json();
-        return {
-          profile_url: prospect.linkedinUrl,
-          scraped: true,
-          employer: data?.current_company || prospect.employer || null,
-          title: data?.current_title || null,
-          location: data?.location || null,
-          headline: data?.headline || null,
-        };
-      } catch (e) {
-        return { profile_url: prospect.linkedinUrl, scraped: false, note: `Error: ${e instanceof Error ? e.message : "Unknown"}` };
-      }
+      // Uses data from CSV import. LinkedIn profile scraping will be available
+      // via HeyReach integration (planned) or manual enrichment.
+      return {
+        profile_url: prospect.linkedinUrl || null,
+        employer: prospect.employer || null,
+      };
     }
 
     case "employer_lookup":

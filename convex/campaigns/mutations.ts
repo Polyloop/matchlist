@@ -60,6 +60,15 @@ export const create = mutation({
     name: v.string(),
     type: campaignTypeValidator,
     description: v.optional(v.string()),
+    templateSettings: v.optional(v.object({
+      autoSendEnabled: v.optional(v.boolean()),
+      confidenceThreshold: v.optional(v.number()),
+      dailySendLimit: v.optional(v.number()),
+      followUpEnabled: v.optional(v.boolean()),
+      followUpDelayDays: v.optional(v.number()),
+      followUpMaxAttempts: v.optional(v.number()),
+    })),
+    promptInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrg(ctx);
@@ -87,6 +96,16 @@ export const create = mutation({
     await ctx.scheduler.runAfter(0, internal.pipeline.engine.createDefaultSettings, {
       campaignId,
     });
+
+    // Apply template overrides + prompt instructions if provided
+    if (args.templateSettings || args.promptInstructions) {
+      // Schedule a follow-up to patch settings after defaults are created
+      await ctx.scheduler.runAfter(500, internal.campaigns.internalMutations.applyTemplateSettings, {
+        campaignId,
+        settings: args.templateSettings || {},
+        promptInstructions: args.promptInstructions,
+      });
+    }
 
     return campaignId;
   },

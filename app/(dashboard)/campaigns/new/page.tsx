@@ -71,9 +71,16 @@ export default function NewCampaignPage() {
         name: name.trim(),
         type: selectedType,
         description: description.trim() || undefined,
+        templateSettings: selectedTemplate?.settings ? {
+          autoSendEnabled: selectedTemplate.settings.autoSendEnabled,
+          confidenceThreshold: selectedTemplate.settings.confidenceThreshold,
+          dailySendLimit: selectedTemplate.settings.dailySendLimit,
+          followUpEnabled: selectedTemplate.settings.followUpEnabled,
+          followUpDelayDays: selectedTemplate.settings.followUpDelayDays,
+          followUpMaxAttempts: selectedTemplate.settings.followUpMaxAttempts,
+        } : undefined,
+        promptInstructions: selectedTemplate?.promptInstructions,
       });
-
-      // TODO: Apply template settings + promptInstructions to campaignSettings
 
       toast.success("Campaign created");
       router.push(`/campaigns/${campaignId}`);

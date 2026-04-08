@@ -1,6 +1,16 @@
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "../_generated/server";
 
+export const updateProspectScore = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    score: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.prospectId, { donorScore: args.score });
+  },
+});
+
 export const getEnrichmentResult = internalQuery({
   args: {
     prospectId: v.id("prospects"),

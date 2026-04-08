@@ -21,10 +21,9 @@ import {
 } from "@hugeicons/core-free-icons";
 
 const API_KEY_FIELDS = [
-  { key: "BRIGHT_DATA_API_KEY", label: "LinkedIn Enrichment", description: "Powered by Bright Data", icon: LinkedinIcon },
+  { key: "ANTHROPIC_API_KEY", label: "AI Message Writer", description: "Powered by Claude — generates personalised outreach", icon: AiBeautifyIcon },
+  { key: "FIRECRAWL_API_KEY", label: "Website Intelligence", description: "Powered by Firecrawl — scrapes company websites for CSR info", icon: Globe02Icon },
   { key: "DOUBLE_THE_DONATION_API_KEY", label: "Matching Gift Database", description: "Powered by Double the Donation", icon: GiftIcon },
-  { key: "ANTHROPIC_API_KEY", label: "AI Message Writer", description: "Powered by Claude", icon: AiBeautifyIcon },
-  { key: "FIRECRAWL_API_KEY", label: "Website Intelligence", description: "Powered by Firecrawl — scrape company websites for CSR info", icon: Globe02Icon },
 ];
 
 const PROFILE_FIELDS = [
