@@ -1,228 +1,229 @@
-# Plan: Inbound Intent Classification + Proactive Agent Triggers
+# Plan: Chat-First Agent Experience
 
 ## Context
 
-Moving Matchlist from "campaign tool you operate" to "relationship agent that operates for you." Two features that make the biggest difference:
+The current platform has 15+ pages/screens and feels like every other SaaS dashboard. The vision from the proposal doc is an autonomous membership agent. The experience should feel like talking to an intelligent assistant, not clicking through a CRM.
 
-1. **Inbound intent classification** — when a response is marked, AI classifies the intent and routes to the right action (not just a binary "responded" flag)
-2. **Proactive triggers** — a scheduled agent that continuously scans data, detects opportunities, and takes autonomous action
+**Approach:** Replace the dashboard with a chat interface powered by AI SDK `useChat` + tool calling. The agent can do everything the platform does — create campaigns, import data, check status, approve messages, answer questions — all through natural conversation with real tool execution visible inline.
 
----
+## Architecture
 
-## 1. Inbound Intent Classification
-
-### Current state
-When user clicks "Mark as Responded", the system:
-- Sets `respondedAt` on the message
-- Cancels follow-up sequences
-- Logs "Response received"
-- Schedules a blind AI reply (doesn't know what the prospect said)
-
-### New flow
-When user clicks "Mark as Responded", optionally pastes the reply text, the system:
-
-1. **AI classifies the intent** into one of:
-   - `interested` — wants more info, meeting, next steps
-   - `positive` — accepted, agreed, will do it
-   - `question` — asking for clarification
-   - `referral` — redirecting to someone else ("talk to my colleague")
-   - `not_now` — timing isn't right but not a hard no
-   - `declined` — clear no, unsubscribe
-   - `out_of_office` — auto-reply, try again later
-
-2. **Routes to the right action based on classification:**
-   - `interested/positive/question` → generate tailored reply, keep in active pipeline
-   - `referral` → log the referral, create new prospect for the referred person if name/email given
-   - `not_now` → pause sequence, schedule re-engagement in 30/60/90 days via Cronlet
-   - `declined` → mark as cold, stop all sequences, log permanently
-   - `out_of_office` → reschedule the original message for +7 days
-
-3. **The AI reply is tailored to the classification** — not a generic follow-up
-
-### Schema changes
-
-Add to `outreachMessages`:
 ```
-responseText: v.optional(v.string()),         // The prospect's reply (pasted by user)
-responseIntent: v.optional(v.string()),       // AI-classified intent
-responseClassifiedAt: v.optional(v.number()),
+User types message
+  → Next.js API route /api/chat (streaming)
+    → Claude receives message + tool definitions
+      → Claude decides: respond with text, or call a tool
+        → Tool executes Convex mutation/query
+          → Result streams back inline
+            → Claude summarises what happened
 ```
 
-### Convex changes
+**AI SDK `useChat`** on the frontend handles:
+- Message state, streaming, input management
+- Tool call display (show what the agent is doing)
+- Tool result rendering (inline cards, tables, confirmations)
 
-**`convex/pipeline/intentClassifier.ts`** (new) — Internal action:
-- Receives: original message + response text (or empty)
-- Calls Claude with classification prompt
-- Returns: `{ intent, confidence, suggestedAction, reasoning }`
+**Next.js API route** `/app/api/chat/route.ts` handles:
+- Receives messages from useChat
+- Calls `streamText` with Claude + tool definitions
+- Tools execute Convex functions server-side
+- Streams response back
 
-**`convex/outreach/mutations.ts`** — Update `markResponded`:
-- Accept optional `responseText` arg
-- If response text provided, schedule intent classification
-- If no text, still mark responded + generate generic reply (current behaviour)
+**Why a Next.js API route (not Convex action):** AI SDK's `useChat` expects a standard HTTP streaming endpoint. Convex actions can't stream SSE. So we keep one API route for the chat, and it calls Convex functions internally.
 
-**`convex/pipeline/intentRouter.ts`** (new) — Internal mutation:
-- Called after classification completes
-- Routes based on intent:
-  - `interested/positive/question`: schedule reply generation with context
-  - `referral`: log + optionally create new prospect
-  - `not_now`: schedule Cronlet re-engagement task (30 days)
-  - `declined`: mark prospect as `disengaged`, stop all automation
-  - `out_of_office`: reschedule send for +7 days
+## The Tools
 
-### UI changes
+Each tool maps to existing Convex functions. The agent decides which to call based on the user's message.
 
-**`components/review/message-detail.tsx`** — Update "Mark as Responded":
-- Instead of a simple button, show a small form:
-  - Textarea: "Paste the reply (optional)" — collapsible, not required
-  - Button: "Classify & Route" (or just "Mark Responded" if no text)
-- After classification, show the result inline:
-  - Intent badge: "Interested" (green) / "Declined" (red) / etc.
-  - AI reasoning: "They asked about the submission process — this is a warm lead"
-  - Suggested action: "Send detailed follow-up with matching gift guide"
-  - The generated reply is already being drafted below
+### Campaign management
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `createCampaign` | Create a new campaign | `campaigns.mutations.create` |
+| `listCampaigns` | Show all campaigns | `campaigns.queries.list` |
+| `getCampaignStatus` | Get campaign details + metrics | `campaigns.queries.get` + `analytics.queries.campaignAnalytics` |
 
-**`components/review/message-list.tsx`** — Show intent badge on responded messages:
-  - "Interested" / "Declined" / "OOO" etc. with color coding
+### Prospect management
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `importProspects` | Import from provided data | `prospects.mutations.importProspects` |
+| `getProspectProfile` | Show prospect intelligence | `prospects.intelligenceQueries.getProfile` |
+| `searchProspects` | Find prospects by name/employer | `prospects.queries.list` with filter |
 
----
+### Pipeline & enrichment
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `runPipeline` | Start/re-run pipeline for a campaign | `pipeline.actions.rerunPipeline` |
+| `getPipelineStatus` | Check what's running | `analytics.queries.campaignAnalytics` |
 
-## 2. Proactive Agent Triggers
+### Outreach
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `listDrafts` | Show messages needing review | `outreach.queries.list` filtered to drafts |
+| `approveMessage` | Approve a draft | `outreach.mutations.approve` |
+| `approveAll` | Approve all drafts | `outreach.mutations.bulkApprove` |
+| `sendMessage` | Send an approved message | `outreach.mutations.sendNow` |
 
-### Concept
+### Settings
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `updateProfile` | Set org name, sender name, etc. | `settings.mutations.update` |
+| `updateApiKey` | Configure an integration | `settings.mutations.update` |
 
-A scheduled job (via Convex crons or Cronlet) that runs periodically, analyses all data, detects actionable moments, and either:
-- **Takes autonomous action** (if auto-send is on): generates messages, schedules sends
-- **Creates signals** (if auto-send is off): surfaces in the Signals panel for the user
+### Intelligence
+| Tool | Description | Convex function |
+|------|-------------|----------------|
+| `getSignals` | What should I focus on? | `analytics.signals.getSignals` |
+| `getMetrics` | Global dashboard metrics | `analytics.queries.global` |
 
-This is the difference between "signals you look at" and "an agent that acts."
+## UI Layout
 
-### Trigger types
+### Simplified app structure
 
-**Re-engagement triggers:**
-- Prospect sent message 14+ days ago, no open → re-try with different subject line (auto)
-- Prospect opened but didn't respond, 7+ days → send follow-up (auto or signal)
-- Prospect marked `not_now` 30+ days ago → re-engage (auto or signal)
-
-**Opportunity triggers:**
-- New enrichment reveals match eligibility → draft matching gift outreach (auto)
-- Donor score > 80 and no outreach yet → prioritise and draft (auto or signal)
-- Website intelligence found CSR programme → flag for sponsorship outreach (signal)
-
-**Maintenance triggers:**
-- Campaign has prospects with failed enrichments → auto-retry (auto)
-- Campaign has stale drafts (7+ days unreviewed) → remind user (signal)
-- Daily send quota not reached → suggest more outreach (signal)
-
-### Implementation
-
-**`convex/agent/triggers.ts`** (new) — The agent brain:
-
-```typescript
-// Scheduled to run every hour (or via Cronlet every 30 min)
-export const runTriggerScan = internalAction({
-  // 1. Get all orgs
-  // 2. For each org, scan data for trigger conditions
-  // 3. For each trigger fired:
-  //    - If auto-action: execute (generate message, schedule send, retry enrichment)
-  //    - If signal-only: create activity log entry + update signals
-  // 4. Log what the agent did
-});
+```
+┌──────────────┬─────────────────────────────────────────┐
+│  Sidebar     │  Main content                           │
+│              │                                          │
+│  MatchList   │  ┌──────────────────────────────────┐   │
+│              │  │ Chat messages                     │   │
+│  💬 Chat     │  │                                    │   │
+│  📊 Table    │  │ You: Create a donation matching    │   │
+│  📬 Review   │  │      campaign for our spring gala  │   │
+│              │  │                                    │   │
+│  ─────────── │  │ Agent: ✅ Created "Spring Gala     │   │
+│  Campaigns   │  │ Match Drive" with 6 enrichment    │   │
+│  > Spring... │  │ steps. Import a CSV to get started.│   │
+│  > Q1 Don... │  │                                    │   │
+│              │  │ [Campaign Card inline]              │   │
+│  + New       │  │                                    │   │
+│              │  │ You: Here's my list                 │   │
+│  ─────────── │  │ [file: attendees.csv]              │   │
+│  ⚙ Settings  │  │                                    │   │
+│              │  │ Agent: ✅ Imported 45 prospects.    │   │
+│              │  │ Pipeline started — enriching now.   │   │
+│              │  │                                    │   │
+│              │  │ [Progress: 12/45 enriched]         │   │
+│              │  │                                    │   │
+│              │  └──────────────────────────────────┘   │
+│              │  ┌──────────────────────────────────┐   │
+│              │  │ Message input                  📎 │   │
+│              │  └──────────────────────────────────┘   │
+└──────────────┴─────────────────────────────────────────┘
 ```
 
-**`convex/agent/actions.ts`** (new) — Autonomous actions the agent can take:
+### Sidebar (simplified)
+- **Chat** — the main experience (default)
+- **Table** — direct access to campaign table view (for when you want the spreadsheet)
+- **Review** — direct access to review inbox (for bulk message review)
+- Campaigns list (existing)
+- Settings
 
-```typescript
-export const autoRetryFailedEnrichments = internalAction(...)
-export const autoGenerateForHighScoreProspects = internalAction(...)
-export const autoResendWithNewSubject = internalAction(...)
-export const autoReEngageLapsed = internalAction(...)
+### Chat page (`/dashboard` or `/`)
+- Full-height chat interface
+- Messages stream in real-time
+- Tool calls render as inline cards:
+  - Campaign created → campaign card
+  - Prospects imported → count + progress
+  - Message approved → message preview
+  - Signals → signal cards
+  - Metrics → metric cards
+- File drop zone for CSV import
+- Message input at bottom with send button
+
+### Tool call rendering
+
+When Claude calls a tool, the UI shows it inline:
+
 ```
+Agent is thinking...
+  ├─ 🔍 Checking campaign status...
+  ├─ 📊 Found: 45 prospects, 32 enriched, 8 messages drafted
+  └─ ✅ Done
 
-**`convex/crons.ts`** (new) — Schedule the trigger scan:
-```typescript
-import { cronJobs } from "convex/server";
-import { internal } from "./_generated/api";
+Your "Spring Gala Match Drive" campaign is looking good:
+- 32 of 45 prospects enriched
+- 8 personalised messages drafted and waiting for review
+- 3 prospects scored 80+ (high priority)
 
-const crons = cronJobs();
-crons.interval("agent trigger scan", { minutes: 30 }, internal.agent.triggers.runTriggerScan);
-export default crons;
+Want me to approve and send the top-scoring messages?
 ```
-
-### Activity log for agent actions
-
-When the agent takes autonomous action, it logs clearly:
-- Type: `agent_action` (distinct from user-initiated `enrichment_complete` etc.)
-- Message: "Agent: Re-sent email to Sarah Mitchell with new subject line (original had no opens after 14 days)"
-- This shows up in the Activity feed with a distinct "Agent" label
-
-### Schema changes
-
-Add to `prospects`:
-```
-engagementStatus: v.optional(v.string()),  // "active" | "lapsed" | "disengaged" | "reengaging"
-lastAgentAction: v.optional(v.number()),   // timestamp of last autonomous action
-```
-
-### Signals integration
-
-The existing `analytics/signals.ts` already surfaces passive signals. The agent trigger scan adds:
-- Signals with `type: "agent_action"` — "Agent re-sent 3 emails with new subject lines"
-- Signals with `type: "agent_recommendation"` — "Agent found 5 high-score prospects to contact. Auto-send is off — approve to proceed."
-
-### UI: Agent status on dashboard
-
-Add a small "Agent" status card to the dashboard:
-```
-┌─────────────────────────────────────────┐
-│ 🤖 Agent Status                        │
-│ Last scan: 12 minutes ago              │
-│ Actions today: 3 re-sends, 2 follow-ups│
-│ Pending recommendations: 5             │
-└─────────────────────────────────────────┘
-```
-
----
 
 ## Files
 
 ### Create
 | File | Purpose |
 |------|---------|
-| `convex/pipeline/intentClassifier.ts` | AI intent classification action |
-| `convex/pipeline/intentRouter.ts` | Route actions based on classified intent |
-| `convex/agent/triggers.ts` | Scheduled trigger scan — the agent brain |
-| `convex/agent/actions.ts` | Autonomous actions (retry, re-send, re-engage) |
-| `convex/crons.ts` | Schedule agent scan every 30 min |
-| `components/dashboard/agent-status.tsx` | Agent status card for dashboard |
+| `app/api/chat/route.ts` | Streaming chat endpoint with tool definitions |
+| `app/(dashboard)/chat/page.tsx` | Chat page (becomes the default landing) |
+| `components/chat/chat-interface.tsx` | Main chat UI using `useChat` |
+| `components/chat/message-bubble.tsx` | Renders user + assistant messages |
+| `components/chat/tool-call-card.tsx` | Renders tool call results as inline cards |
+| `components/chat/file-drop.tsx` | CSV file drop zone in chat input |
+| `lib/chat/tools.ts` | Tool definitions (shared between route and UI) |
+| `lib/chat/convex-tools.ts` | Tool execute functions that call Convex |
 
 ### Modify
 | File | Change |
 |------|--------|
-| `convex/schema.ts` | Add `responseText`, `responseIntent`, `responseClassifiedAt` to outreachMessages. Add `engagementStatus`, `lastAgentAction` to prospects. |
-| `convex/outreach/mutations.ts` | Update `markResponded` to accept `responseText`, schedule classification |
-| `convex/pipeline/replyGenerator.ts` | Accept intent + response text for tailored replies |
-| `components/review/message-detail.tsx` | Response text input + intent display |
-| `components/review/message-list.tsx` | Intent badge on responded messages |
-| `app/(dashboard)/dashboard/page.tsx` | Add agent status card |
+| `components/sidebar/app-sidebar.tsx` | Simplify nav: Chat (default), Table, Review, Campaigns, Settings |
+| `app/page.tsx` | Redirect to `/chat` instead of `/dashboard` |
+| `app/(dashboard)/dashboard/page.tsx` | Keep but make secondary — chat is primary |
 
----
+### Dependencies
+```bash
+# Already installed: ai, @ai-sdk/anthropic
+# No new deps needed — useChat is part of the ai package
+```
+
+## Chat API Route
+
+`app/api/chat/route.ts` — the streaming endpoint:
+
+```typescript
+import { streamText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+// Import Convex client for server-side calls
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  const result = streamText({
+    model: anthropic("claude-sonnet-4-20250514"),
+    system: `You are MatchList, an AI membership agent for non-profits. You help organisations manage outreach campaigns, enrich prospect data, generate personalised messages, and track engagement.
+
+You have access to tools to create campaigns, import prospects, check status, approve messages, and more. Use them proactively — don't just describe what you could do, do it.
+
+Be concise, warm, and action-oriented. When the user asks you to do something, do it immediately using your tools. Show results inline.`,
+    messages,
+    tools: {
+      createCampaign: { ... },
+      listCampaigns: { ... },
+      // ... all tools
+    },
+    maxSteps: 5, // Allow multi-step tool calling
+  });
+
+  return result.toDataStreamResponse();
+}
+```
+
+## Key design decisions
+
+1. **Chat is the default page** — not the dashboard. The dashboard becomes a secondary view.
+2. **Tool calls are visible** — the user sees what the agent is doing (not a black box).
+3. **The table and review views still exist** — for when you want to see/edit data directly. But you reach them from the sidebar, not as the primary experience.
+4. **File upload in chat** — drag a CSV onto the chat or click the attach button.
+5. **Convex calls happen server-side** — the API route imports the Convex client and calls functions directly. No need for auth passthrough since the chat route is already auth-protected by Clerk middleware.
+6. **Multi-step tool calling** — `maxSteps: 5` lets Claude chain actions (create campaign → import → run pipeline) in one turn.
 
 ## Verification
 
-### Intent Classification
-- [ ] "Mark as Responded" shows optional text input for pasting reply
-- [ ] With text: AI classifies intent, shows badge + reasoning
-- [ ] `interested` → tailored reply generated
-- [ ] `declined` → prospect marked disengaged, sequences stopped
-- [ ] `out_of_office` → reschedules for +7 days
-- [ ] Without text: existing behaviour (generic reply)
-- [ ] Intent badge shows in message list
-
-### Proactive Agent
-- [ ] Cron job runs every 30 minutes
-- [ ] Auto-retries failed enrichments
-- [ ] Re-sends emails with no opens after 14 days (new subject)
-- [ ] Generates outreach for high-score prospects without messages
-- [ ] Logs all actions with "Agent:" prefix in activity feed
-- [ ] Agent status card shows on dashboard
-- [ ] With auto-send off: creates signals/recommendations instead of acting
+- [ ] Chat page loads as the default experience
+- [ ] User can type "create a donation matching campaign called Spring Gala" → campaign created
+- [ ] User can drop a CSV → prospects imported, pipeline starts
+- [ ] "How's my campaign going?" → shows metrics inline
+- [ ] "Approve all drafts" → messages approved with confirmation
+- [ ] "What should I focus on?" → signals surfaced inline
+- [ ] Tool calls render as cards, not raw JSON
+- [ ] Streaming feels responsive
+- [ ] Sidebar still gives direct access to Table, Review, Settings

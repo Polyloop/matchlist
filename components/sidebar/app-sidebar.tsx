@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { label: "Dashboard", href: "/dashboard", icon: DashboardSquare01Icon },
+  { label: "Chat", href: "/chat", icon: DashboardSquare01Icon },
   { label: "Review", href: "/review", icon: MailSend01Icon },
 ];
 
