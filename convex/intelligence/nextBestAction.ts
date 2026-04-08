@@ -11,6 +11,28 @@ interface ScoredAction {
   recommendedAction: string;
   whyNow: string;
   actionReason: string;
+  dataQuality: number;
+  missingFields: string[];
+}
+
+function calculateDataQuality(p: any): { score: number; missing: string[] } {
+  const missing: string[] = [];
+  let fields = 0;
+  let filled = 0;
+
+  // Core fields (weighted higher)
+  fields += 2; if (p.email) filled += 2; else missing.push("email");
+  fields += 2; if (p.employer) filled += 2; else missing.push("employer");
+
+  // Relationship fields
+  fields += 1; if (p.membershipStatus) filled += 1; else missing.push("membership status");
+  fields += 1; if (p.lastEngagement) filled += 1; else missing.push("last engagement date");
+  fields += 1; if (p.engagementTypes?.length) filled += 1; else missing.push("engagement history");
+  fields += 1; if (p.donationHistory) filled += 1; else missing.push("donation history");
+  fields += 1; if (p.notes) filled += 1; else missing.push("relationship notes");
+  fields += 1; if (p.role) filled += 1; else missing.push("job title");
+
+  return { score: Math.round((filled / fields) * 10), missing };
 }
 
 /**
@@ -152,6 +174,8 @@ export const getNextBestActions = query({
 
       const whyNow = `${p.name}: ${whyParts.join(". ")}.`;
 
+      const quality = calculateDataQuality(p);
+
       scored.push({
         prospectId: p._id,
         prospectName: p.name,
@@ -161,13 +185,44 @@ export const getNextBestActions = query({
         recommendedAction: action,
         whyNow,
         actionReason,
+        dataQuality: quality.score,
+        missingFields: quality.missing,
       });
     }
 
     // Sort by priority descending
     scored.sort((a, b) => b.priority - a.priority);
 
-    return scored.slice(0, args.limit || 10);
+    // Calculate network-wide data quality summary
+    const avgQuality = scored.length > 0
+      ? Math.round(scored.reduce((sum, s) => sum + s.dataQuality, 0) / scored.length)
+      : 0;
+
+    const commonMissing: Record<string, number> = {};
+    for (const s of scored) {
+      for (const f of s.missingFields) {
+        commonMissing[f] = (commonMissing[f] || 0) + 1;
+      }
+    }
+    const topMissing = Object.entries(commonMissing)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([field, count]) => `${field} (${count}/${scored.length} missing)`);
+
+    return {
+      actions: scored.slice(0, args.limit || 10),
+      networkSummary: {
+        totalSuporters: prospects.length,
+        scoredCount: scored.length,
+        avgDataQuality: avgQuality,
+        topMissingFields: topMissing,
+        dataQualityNote: avgQuality >= 7
+          ? "Good data — recommendations are high confidence"
+          : avgQuality >= 4
+            ? "Moderate data — recommendations are reasonable but could improve with more context"
+            : "Sparse data — adding membership status, engagement history, and notes would significantly improve recommendations",
+      },
+    };
   },
 });
 

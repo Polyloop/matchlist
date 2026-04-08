@@ -139,6 +139,26 @@ export function ProspectDetailPanel({ open, onOpenChange, prospectId }: Prospect
             </div>
           )}
 
+          {/* Data quality */}
+          {(profile as any).dataQuality && (
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <span className="text-xs text-muted-foreground">Data Quality</span>
+                {(profile as any).dataQuality.score < 5 && (profile as any).dataQuality.missing.length > 0 && (
+                  <p className="text-[10px] text-amber-600 mt-0.5">
+                    Missing: {(profile as any).dataQuality.missing.slice(0, 3).join(", ")}
+                  </p>
+                )}
+              </div>
+              <span className={cn(
+                "text-sm font-semibold tabular-nums",
+                (profile as any).dataQuality.score >= 7 ? "text-emerald-600" : (profile as any).dataQuality.score >= 4 ? "text-amber-600" : "text-red-500",
+              )}>
+                {(profile as any).dataQuality.score}/10
+              </span>
+            </div>
+          )}
+
           {/* Enrichments */}
           <div>
             <h3 className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground mb-2">Enrichment Data</h3>

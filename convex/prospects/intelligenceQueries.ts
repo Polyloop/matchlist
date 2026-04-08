@@ -162,6 +162,19 @@ export const getProfile = query({
         opened: openedMessages.length,
         responded: respondedMessages.length,
       },
+      dataQuality: (() => {
+        const missing: string[] = [];
+        let fields = 0, filled = 0;
+        fields += 2; if (prospect.email) filled += 2; else missing.push("email");
+        fields += 2; if (prospect.employer) filled += 2; else missing.push("employer");
+        fields += 1; if (prospect.membershipStatus) filled += 1; else missing.push("membership status");
+        fields += 1; if (prospect.lastEngagement) filled += 1; else missing.push("last engagement");
+        fields += 1; if (prospect.engagementTypes?.length) filled += 1; else missing.push("engagement history");
+        fields += 1; if (prospect.donationHistory) filled += 1; else missing.push("donation history");
+        fields += 1; if (prospect.notes) filled += 1; else missing.push("notes");
+        fields += 1; if (prospect.role) filled += 1; else missing.push("job title");
+        return { score: Math.round((filled / fields) * 10), missing };
+      })(),
     };
   },
 });

@@ -328,10 +328,20 @@ function ToolCard({ toolType, state, input, output, errorText }: {
     }
 
     // Next best actions — scored recommendation cards
-    if (toolName === "getNextBestActions" && Array.isArray(output)) {
+    if (toolName === "getNextBestActions" && output.actions) {
+      const actions = output.actions as any[];
+      const summary = output.networkSummary as any;
       return (
         <div className="space-y-2 max-w-md">
-          {output.map((r: any, i: number) => (
+          {summary && (
+            <p className="text-[10px] text-muted-foreground">
+              {summary.totalSuporters} supporters · Data quality: {summary.avgDataQuality}/10
+              {summary.avgDataQuality < 5 && summary.topMissingFields?.length > 0 && (
+                <span className="block mt-0.5 text-amber-600">Tip: adding {summary.topMissingFields[0]} would improve recommendations</span>
+              )}
+            </p>
+          )}
+          {actions.map((r: any, i: number) => (
             <Card key={i} className={cn(r.priority >= 70 && "border-amber-200")}>
               <CardContent>
                 <div className="flex items-center gap-2 mb-1">
@@ -342,6 +352,9 @@ function ToolCard({ toolType, state, input, output, errorText }: {
                 </div>
                 <p className="text-[10px] text-muted-foreground">{r.whyNow}</p>
                 <p className="text-[10px] text-primary/80 mt-0.5">{r.actionReason}</p>
+                {r.dataQuality < 4 && (
+                  <p className="text-[9px] text-amber-500 mt-0.5">Low data — {r.missingFields?.slice(0, 2).join(", ")}</p>
+                )}
               </CardContent>
             </Card>
           ))}
