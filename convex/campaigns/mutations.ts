@@ -152,6 +152,7 @@ export const updateSettings = mutation({
     followUpEnabled: v.optional(v.boolean()),
     followUpDelayDays: v.optional(v.number()),
     followUpMaxAttempts: v.optional(v.number()),
+    promptInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrg(ctx);

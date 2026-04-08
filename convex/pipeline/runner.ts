@@ -168,6 +168,12 @@ export const generateMessage = internalAction({
       const senderTitle = orgSettings.SENDER_TITLE || "";
       const senderSignature = orgSettings.SENDER_SIGNATURE || `${senderName}${senderTitle ? `\n${senderTitle}` : ""}\n${orgSettings.ORG_NAME || org?.name || ""}`;
 
+      // Get campaign-specific prompt instructions
+      const campaignSettings = await ctx.runQuery(
+        internal.pipeline.helpers.getCampaignSettings,
+        { campaignId: args.campaignId },
+      );
+
       const prompt = getMessagePrompt({
         campaignType: campaign.type,
         orgName: orgSettings.ORG_NAME || org?.name || "Our Organisation",
@@ -179,6 +185,11 @@ export const generateMessage = internalAction({
         senderTitle,
         senderSignature,
       });
+
+      // Append campaign-specific instructions if they exist
+      if (campaignSettings?.promptInstructions) {
+        prompt.system += `\n\nADDITIONAL INSTRUCTIONS FROM CAMPAIGN OWNER:\n${campaignSettings.promptInstructions}`;
+      }
 
       const apiKey = orgSettings.ANTHROPIC_API_KEY;
 

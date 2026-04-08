@@ -83,14 +83,20 @@ export const updateContent = mutation({
 });
 
 export const markResponded = mutation({
-  args: { id: v.id("outreachMessages") },
+  args: {
+    id: v.id("outreachMessages"),
+    responseText: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrg(ctx);
     const msg = await ctx.db.get(args.id);
     if (!msg || msg.orgId !== orgId) throw new Error("Not found");
 
     // Mark message as responded
-    await ctx.db.patch(args.id, { respondedAt: Date.now() });
+    await ctx.db.patch(args.id, {
+      respondedAt: Date.now(),
+      responseText: args.responseText,
+    });
 
     // Cancel all future follow-up sequence steps for this prospect
     const steps = await ctx.db
@@ -114,13 +120,14 @@ export const markResponded = mutation({
       message: `Response received from ${prospect?.name || "prospect"}`,
     });
 
-    // Schedule AI reply generation
+    // Schedule intent classification + routing (replaces generic reply generation)
     if (msg.campaignId) {
-      await ctx.scheduler.runAfter(0, internal.pipeline.replyGenerator.generateReply, {
-        originalMessageId: args.id,
-        campaignId: msg.campaignId,
+      await ctx.scheduler.runAfter(0, internal.pipeline.intentClassifier.classifyAndRoute, {
+        messageId: args.id,
         orgId,
+        campaignId: msg.campaignId,
         prospectId: msg.prospectId,
+        responseText: args.responseText,
       });
     }
   },

@@ -146,4 +146,29 @@ http.route({
   }),
 });
 
+/**
+ * Agent trigger endpoint.
+ * Called by a recurring Cronlet task every 30 minutes.
+ * Runs the autonomous agent scan across all orgs.
+ */
+http.route({
+  path: "/agent/scan",
+  method: "POST",
+  handler: httpAction(async (ctx) => {
+    try {
+      await ctx.runAction(internal.agent.triggers.runTriggerScan);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
 export default http;

@@ -125,7 +125,15 @@
     }
   html {
     @apply font-sans;
+    /* Scale up font sizes throughout the platform */
+    --text-scale: 1.15;
     }
+
+  /* Override tiny font sizes to be more readable */
+  .text-xs { font-size: 0.8125rem !important; /* 13px instead of 12px */ }
+  .text-\[11px\] { font-size: 12px !important; }
+  .text-\[10px\] { font-size: 11px !important; }
+  .text-\[9px\] { font-size: 10px !important; }
 
   /* Cursor pointer on all interactive elements */
   button,

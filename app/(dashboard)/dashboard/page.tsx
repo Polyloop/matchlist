@@ -10,6 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { SendCalendar } from "@/components/dashboard/send-calendar";
+import { WelcomeHero } from "@/components/onboarding/welcome-hero";
+import { OnboardingChecklist } from "@/components/onboarding/checklist";
+import { SignalsPanel } from "@/components/dashboard/signals";
+import { AgentStatus } from "@/components/dashboard/agent-status";
 import { CAMPAIGN_TYPE_CONFIGS } from "@/lib/campaigns/types";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -39,11 +43,25 @@ const campaignIcons: Record<string, IconSvgElement> = {
 export default function DashboardPage() {
   const campaigns = useQuery(api.campaigns.queries.list);
   const metrics = useQuery(api.analytics.queries.global);
+  const onboarding = useQuery(api.onboarding.queries.getStatus);
   const seed = useMutation(api.seed.run);
   const loading = campaigns === undefined;
 
+  // Brand new user — show welcome hero
+  if (onboarding && !onboarding.dismissed && onboarding.completedSteps === 0) {
+    return <WelcomeHero />;
+  }
+
   return (
     <div className="space-y-8">
+      {/* Onboarding checklist */}
+      {onboarding && !onboarding.dismissed && !onboarding.allComplete && (
+        <OnboardingChecklist
+          steps={onboarding.steps}
+          completedSteps={onboarding.completedSteps}
+          totalSteps={onboarding.totalSteps}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -196,6 +214,12 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Agent status */}
+          <AgentStatus />
+
+          {/* Signals */}
+          <SignalsPanel />
 
           {/* Send schedule */}
           <div>

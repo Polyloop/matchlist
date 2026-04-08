@@ -76,6 +76,8 @@ export default defineSchema({
     employerMatchCap: v.optional(v.number()),
     matchEligible: v.boolean(),
     donorScore: v.optional(v.number()),
+    engagementStatus: v.optional(v.string()),
+    lastAgentAction: v.optional(v.number()),
   })
     .index("by_org", ["orgId"])
     .index("by_campaign", ["campaignId"])
@@ -130,6 +132,9 @@ export default defineSchema({
     sequenceStep: v.optional(v.number()),
     replyTo: v.optional(v.id("outreachMessages")),
     isReply: v.optional(v.boolean()),
+    responseText: v.optional(v.string()),
+    responseIntent: v.optional(v.string()),
+    responseClassifiedAt: v.optional(v.number()),
   })
     .index("by_org", ["orgId"])
     .index("by_campaign", ["campaignId"])
@@ -216,4 +221,11 @@ export default defineSchema({
     status: v.union(v.literal("success"), v.literal("failed")),
     details: v.optional(v.string()),
   }).index("by_connection", ["connectionId"]),
+
+  // Onboarding state
+  onboardingState: defineTable({
+    orgId: v.id("organizations"),
+    dismissed: v.boolean(),
+    completedAt: v.optional(v.number()),
+  }).index("by_org", ["orgId"]),
 });

@@ -122,6 +122,30 @@ export default function CampaignSettingsPage() {
       {/* Auto-send settings */}
       {settings && (
         <>
+          {/* AI Instructions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">AI Instructions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[11px] text-muted-foreground">
+                Custom instructions for the AI when generating outreach for this campaign. These are appended to the system prompt — use them to set tone, reference events, or add context the AI should know.
+              </p>
+              <Textarea
+                value={settings.promptInstructions || ""}
+                onChange={(e) => handleSettingChange("promptInstructions", e.target.value)}
+                placeholder="e.g. Reference that the recipient attended our spring gala. Use a warm, grateful tone. Mention the matching deadline is December 31st."
+                className="text-xs min-h-[80px]"
+                rows={4}
+              />
+              {settings.promptInstructions && (
+                <p className="text-[10px] text-muted-foreground">
+                  These instructions will be used for all new messages generated in this campaign. Re-run the pipeline to regenerate existing messages.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">

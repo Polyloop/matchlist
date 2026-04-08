@@ -41,6 +41,8 @@ export function MessageDetail({ message }: MessageDetailProps) {
   const [editSubject, setEditSubject] = useState("");
   const [editContent, setEditContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showResponseInput, setShowResponseInput] = useState(false);
+  const [responseText, setResponseText] = useState("");
 
   const approve = useMutation(api.outreach.mutations.approve);
   const sendNow = useMutation(api.outreach.mutations.sendNow);
@@ -194,6 +196,40 @@ export function MessageDetail({ message }: MessageDetailProps) {
         )}
       </div>
 
+      {/* Response classification */}
+      {showResponseInput && (
+        <div className="border-t p-3 bg-muted/30 space-y-3">
+          <div>
+            <p className="text-xs font-medium">How did they respond?</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Add context to help the AI classify and draft the right reply</p>
+          </div>
+          <Textarea
+            value={responseText}
+            onChange={(e) => setResponseText(e.target.value)}
+            placeholder="e.g. They asked about the matching gift submission process / Said they're interested but busy until January / Referred me to their HR team..."
+            className="text-xs min-h-[50px]"
+            rows={2}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async () => {
+              setLoading(true);
+              try {
+                await markResponded({ id: message!._id, responseText: responseText || undefined });
+                toast.success(responseText ? "Classifying response..." : "Marked as responded — drafting reply...");
+                setShowResponseInput(false);
+                setResponseText("");
+              } catch { toast.error("Failed"); }
+              finally { setLoading(false); }
+            }} disabled={loading}>
+              {loading ? "Processing..." : responseText ? "Classify & Route" : "Mark Responded"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowResponseInput(false); setResponseText(""); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="border-t p-3">
         <div className="flex items-center gap-2">
@@ -227,23 +263,21 @@ export function MessageDetail({ message }: MessageDetailProps) {
                   {loading ? "Sending..." : "Send Now"}
                 </Button>
               )}
-              {message.status === "sent" && !message.respondedAt && (
-                <Button size="sm" variant="outline" onClick={async () => {
-                  setLoading(true);
-                  try {
-                    await markResponded({ id: message._id });
-                    toast.success("Marked as responded");
-                  } catch { toast.error("Failed"); }
-                  finally { setLoading(false); }
-                }} disabled={loading} className="border-blue-200 text-blue-700 hover:bg-blue-50">
+              {message.status === "sent" && !message.respondedAt && !showResponseInput && (
+                <Button size="sm" variant="outline" onClick={() => setShowResponseInput(true)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
                   <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={1.5} className="mr-1 size-3.5" />
                   Mark Responded
                 </Button>
               )}
               {message.respondedAt && (
-                <Badge className="border-blue-200 bg-blue-50 text-blue-700">
-                  Responded {new Date(message.respondedAt).toLocaleDateString()}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className="border-blue-200 bg-blue-50 text-blue-700">
+                    {(message as any).responseIntent || "Responded"}
+                  </Badge>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(message.respondedAt).toLocaleDateString()}
+                  </span>
+                </div>
               )}
               <div className="flex-1" />
               {(message.status === "draft" || message.status === "failed") && (

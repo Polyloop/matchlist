@@ -307,15 +307,7 @@ export default function CampaignTablePage() {
       <ProspectDetailPanel
         open={prospectPanelOpen}
         onOpenChange={setProspectPanelOpen}
-        prospect={selectedProspect ? {
-          _id: selectedProspect._id,
-          name: selectedProspect.name,
-          email: selectedProspect.email,
-          employer: selectedProspect.employer,
-          matchEligible: selectedProspect.matchEligible,
-          donorScore: (selectedProspect as any).donorScore,
-        } : null}
-        campaignId={campaignId}
+        prospectId={selectedProspect?._id ?? null}
       />
     </div>
   );
