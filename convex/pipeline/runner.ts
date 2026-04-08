@@ -68,6 +68,18 @@ export const runEnrichmentBatch = internalAction({
           });
         }
 
+        // Auto-append supporter fact from enrichment
+        const factContent = buildEnrichmentFact(args.enrichmentType, result, prospect.name);
+        if (factContent) {
+          await ctx.runMutation(internal.intelligence.supporterFacts.addFact, {
+            orgId: args.orgId,
+            prospectId,
+            factType: "enrichment",
+            content: factContent,
+            source: "pipeline",
+          });
+        }
+
         // Log activity
         await ctx.runMutation(internal.activity.mutations.log, {
           orgId: args.orgId,
@@ -278,6 +290,15 @@ export const generateMessage = internalAction({
         type: "message_generated",
         message: `AI message generated for ${prospect.name} (confidence: ${confidenceScore}%)${shouldAutoSend ? " — auto-approved" : " — queued for review"}`,
         metadata: { confidenceScore, autoSend: shouldAutoSend },
+      });
+
+      // Auto-append fact
+      await ctx.runMutation(internal.intelligence.supporterFacts.addFact, {
+        orgId: args.orgId,
+        prospectId: args.prospectId,
+        factType: "outreach",
+        content: `Outreach drafted: "${subject}" (${confidenceScore}% confidence)${shouldAutoSend ? " — auto-approved for send" : ""}`,
+        source: "pipeline",
       });
 
       // If auto-approved, schedule the send via Cronlet
@@ -616,5 +637,45 @@ async function executeEnrichment(
 
     default:
       return { note: `No handler for enrichment type: ${enrichmentType}` };
+  }
+}
+
+/**
+ * Build a human-readable fact from an enrichment result.
+ * Returns null if the enrichment doesn't produce a meaningful fact.
+ */
+function buildEnrichmentFact(
+  enrichmentType: string,
+  result: Record<string, unknown>,
+  prospectName: string,
+): string | null {
+  switch (enrichmentType) {
+    case "employer_lookup":
+      return result.employer ? `Works at ${result.employer}` : null;
+
+    case "match_programme":
+      if (result.match_eligible) {
+        const parts = [`Employer matches donations`];
+        if (result.match_ratio) parts.push(`${result.match_ratio}:1 ratio`);
+        if (result.match_cap) parts.push(`up to $${Number(result.match_cap).toLocaleString()}`);
+        if (result.programme_name) parts.push(`(${result.programme_name})`);
+        if (result.source) parts.push(`[source: ${result.source}]`);
+        return parts.join(" — ");
+      }
+      return result.source ? `No employer match programme found [source: ${result.source}]` : null;
+
+    case "website_intelligence":
+      if (result.csr_summary && result.csr_summary !== "null") return `Company CSR: ${String(result.csr_summary).slice(0, 150)}`;
+      if (result.about_summary && !String(result.about_summary).includes("for sale")) return `Company: ${String(result.about_summary).slice(0, 150)}`;
+      return null;
+
+    case "donor_score":
+      return result.score ? `Donor score: ${result.score}/100${result.reasoning ? ` — ${String(result.reasoning).slice(0, 100)}` : ""}` : null;
+
+    case "linkedin_profile":
+      return result.employer ? `LinkedIn: ${result.employer}${result.title ? `, ${result.title}` : ""}` : null;
+
+    default:
+      return null;
   }
 }

@@ -84,10 +84,29 @@ export const getProfile = query({
       .withIndex("by_org", (q) => q.eq("orgId", auth.orgId))
       .collect();
 
-    const timeline = allActivity
-      .filter((a) => a.prospectId === args.prospectId)
+    const activityTimeline = allActivity
+      .filter((a) => a.prospectId === args.prospectId);
+
+    // Get supporter facts
+    const facts = await ctx.db
+      .query("supporterFacts")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .collect();
+
+    // Merge activity + facts into one timeline
+    const timeline = [
+      ...activityTimeline.map((a) => ({ ...a, entryType: "activity" as const })),
+      ...facts.filter((f) => f.orgId === auth.orgId).map((f) => ({
+        _id: f._id,
+        _creationTime: f._creationTime,
+        message: f.content,
+        type: f.factType,
+        entryType: "fact" as const,
+        source: f.source,
+      })),
+    ]
       .sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0))
-      .slice(0, 20);
+      .slice(0, 30);
 
     // Derive signals from data (no AI call needed — instant)
     const signals: string[] = [];
