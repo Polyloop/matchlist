@@ -234,15 +234,27 @@ When recommending people, explain WHY each person matters and WHAT approach to u
           } catch (e) { return { error: String(e) }; }
         },
       },
-      analyseNetwork: {
-        description: "Analyse the prospect network — who to prioritise, why, and what approach. Use this when asked 'who should I talk to', 'who should we reconnect with', 'analyse our network', etc.",
-        inputSchema: z.object({ campaignId: z.string().optional() }),
-        execute: async ({ campaignId }) => {
+      getNextBestActions: {
+        description: "Get scored next-best-actions across all supporters — who to engage, why now, and what approach. Use when asked 'who should I talk to', 'who matters', 'what should I focus on', 'analyse my network', etc.",
+        inputSchema: z.object({
+          limit: z.number().optional(),
+          campaignId: z.string().optional(),
+          actionType: z.string().optional().describe("Filter: reconnect, renew, ask_match, share_value, invite, ask_donate, steward"),
+        }),
+        execute: async ({ limit, campaignId, actionType }) => {
           try {
-            return await convex.query(api.prospects.networkAnalysis.analyse, {
-              campaignId: campaignId ? campaignId as any : undefined,
+            return await convex.query(api.intelligence.nextBestAction.getNextBestActions, {
+              limit, campaignId: campaignId as any, actionType,
             });
           } catch (e) { return { error: String(e) }; }
+        },
+      },
+      getRelationshipMoments: {
+        description: "Get time-sensitive moments — memberships at risk, stale outreach, open responses needing follow-up. Use when asked 'what needs attention', 'any urgent items', 'relationship moments'.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try { return await convex.query(api.intelligence.nextBestAction.getRelationshipMoments); }
+          catch (e) { return { error: String(e) }; }
         },
       },
       getBriefing: {

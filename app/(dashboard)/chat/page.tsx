@@ -286,7 +286,8 @@ function ToolCard({ toolType, state, input, output, errorText }: {
     runPipeline: ["Starting enrichment", "Pipeline running"],
     updateProfile: ["Saving your profile", "Profile updated"],
     getSettings: ["Loading settings", "Settings"],
-    analyseNetwork: ["Analysing your network", "Network analysis"],
+    getNextBestActions: ["Analysing who matters now", "Top priorities"],
+    getRelationshipMoments: ["Checking for time-sensitive moments", "Relationship moments"],
     getBriefing: ["Preparing your briefing", "Briefing"],
     importProspects: ["Importing contacts", "Import complete"],
     getProspectEmail: ["Finding the email", "Email found"],
@@ -326,22 +327,21 @@ function ToolCard({ toolType, state, input, output, errorText }: {
       );
     }
 
-    // Network analysis — recommendation cards
-    if (toolName === "analyseNetwork" && Array.isArray(output.recommendations)) {
+    // Next best actions — scored recommendation cards
+    if (toolName === "getNextBestActions" && Array.isArray(output)) {
       return (
-        <div className="space-y-2 max-w-sm">
-          <p className="text-[11px] text-muted-foreground">
-            {output.total} contacts · {output.lapsedCount} lapsed · {output.matchEligibleCount} match eligible
-          </p>
-          {output.recommendations.map((r: any, i: number) => (
-            <Card key={i} className={cn(r.priority === "high" && "border-amber-200")}>
+        <div className="space-y-2 max-w-md">
+          {output.map((r: any, i: number) => (
+            <Card key={i} className={cn(r.priority >= 70 && "border-amber-200")}>
               <CardContent>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">{r.priority === "high" ? "🔥" : "💡"}</span>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs">{r.priority >= 70 ? "🔥" : r.priority >= 40 ? "💡" : "📋"}</span>
                   <span className="text-xs font-medium">{r.prospectName}</span>
-                  <Badge variant="secondary" className="ml-auto text-[9px]">{r.suggestedIntent}</Badge>
+                  <Badge variant="secondary" className="ml-auto text-[9px]">{r.recommendedAction.replace(/_/g, " ")}</Badge>
+                  <span className="text-[9px] tabular-nums text-muted-foreground">{r.priority}</span>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1">{r.reason}</p>
+                <p className="text-[10px] text-muted-foreground">{r.whyNow}</p>
+                <p className="text-[10px] text-primary/80 mt-0.5">{r.actionReason}</p>
               </CardContent>
             </Card>
           ))}

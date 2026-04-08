@@ -105,6 +105,21 @@ export const importProspects = mutation({
           notes: row.notes || undefined,
         });
 
+        // Auto-create supporter facts from imported data
+        const addFact = async (factType: string, content: string) => {
+          await ctx.db.insert("supporterFacts", {
+            orgId, prospectId, factType, content, source: "csv_import",
+            sourceDate: row.lastEngagement || undefined,
+          });
+        };
+        if (row.membershipStatus) await addFact("membership", `Member status: ${row.membershipStatus}${row.memberSince ? ` since ${row.memberSince}` : ""}`);
+        if (row.donationHistory) await addFact("donation", row.donationHistory);
+        if (row.notes) await addFact("note", row.notes);
+        if (engagementTypes) {
+          for (const t of engagementTypes) await addFact("engagement", `Engaged as: ${t}`);
+        }
+        if (row.employer) await addFact("employment", `${row.role ? `${row.role} at ` : ""}${row.employer}`);
+
         // Create enrichment job
         await ctx.db.insert("enrichmentJobs", {
           orgId,

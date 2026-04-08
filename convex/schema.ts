@@ -238,4 +238,17 @@ export default defineSchema({
     dismissed: v.boolean(),
     completedAt: v.optional(v.number()),
   }).index("by_org", ["orgId"]),
+
+  // Supporter facts — source-aware relationship memory
+  supporterFacts: defineTable({
+    orgId: v.id("organizations"),
+    prospectId: v.id("prospects"),
+    factType: v.string(),
+    content: v.string(),
+    source: v.string(),
+    sourceDate: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_org", ["orgId"]),
 });
