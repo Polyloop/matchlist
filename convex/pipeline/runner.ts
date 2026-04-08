@@ -184,6 +184,14 @@ export const generateMessage = internalAction({
         senderName,
         senderTitle,
         senderSignature,
+        outreachIntent: campaignSettings?.outreachIntent || undefined,
+        membershipStatus: prospect.membershipStatus || undefined,
+        lastEngagement: prospect.lastEngagement || undefined,
+        engagementTypes: prospect.engagementTypes || undefined,
+        donationHistory: prospect.donationHistory || undefined,
+        notes: prospect.notes || undefined,
+        role: prospect.role || undefined,
+        memberSince: prospect.memberSince || undefined,
       });
 
       // Append campaign-specific instructions if they exist

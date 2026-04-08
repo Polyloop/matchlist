@@ -1,229 +1,184 @@
-# Plan: Chat-First Agent Experience
+# Plan: Chat Experience Polish — Auto-briefing, Rich Cards, CSV Drop, Email Preview, Live Progress
 
 ## Context
 
-The current platform has 15+ pages/screens and feels like every other SaaS dashboard. The vision from the proposal doc is an autonomous membership agent. The experience should feel like talking to an intelligent assistant, not clicking through a CRM.
+The chat agent works but feels like a CLI with pretty formatting. These 5 features turn it into something that wows in a demo.
 
-**Approach:** Replace the dashboard with a chat interface powered by AI SDK `useChat` + tool calling. The agent can do everything the platform does — create campaigns, import data, check status, approve messages, answer questions — all through natural conversation with real tool execution visible inline.
+---
 
-## Architecture
+## 1. Auto-briefing on Load
 
-```
-User types message
-  → Next.js API route /api/chat (streaming)
-    → Claude receives message + tool definitions
-      → Claude decides: respond with text, or call a tool
-        → Tool executes Convex mutation/query
-          → Result streams back inline
-            → Claude summarises what happened
-```
+**Goal:** When the chat page loads, the agent automatically sends a briefing. No empty state.
 
-**AI SDK `useChat`** on the frontend handles:
-- Message state, streaming, input management
-- Tool call display (show what the agent is doing)
-- Tool result rendering (inline cards, tables, confirmations)
+**Approach:** On mount, if there are no messages, auto-send a hidden "briefing" message that triggers the agent to call `getBriefing` and respond.
 
-**Next.js API route** `/app/api/chat/route.ts` handles:
-- Receives messages from useChat
-- Calls `streamText` with Claude + tool definitions
-- Tools execute Convex functions server-side
-- Streams response back
+**File:** `app/(dashboard)/chat/page.tsx`
 
-**Why a Next.js API route (not Convex action):** AI SDK's `useChat` expects a standard HTTP streaming endpoint. Convex actions can't stream SSE. So we keep one API route for the chat, and it calls Convex functions internally.
-
-## The Tools
-
-Each tool maps to existing Convex functions. The agent decides which to call based on the user's message.
-
-### Campaign management
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `createCampaign` | Create a new campaign | `campaigns.mutations.create` |
-| `listCampaigns` | Show all campaigns | `campaigns.queries.list` |
-| `getCampaignStatus` | Get campaign details + metrics | `campaigns.queries.get` + `analytics.queries.campaignAnalytics` |
-
-### Prospect management
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `importProspects` | Import from provided data | `prospects.mutations.importProspects` |
-| `getProspectProfile` | Show prospect intelligence | `prospects.intelligenceQueries.getProfile` |
-| `searchProspects` | Find prospects by name/employer | `prospects.queries.list` with filter |
-
-### Pipeline & enrichment
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `runPipeline` | Start/re-run pipeline for a campaign | `pipeline.actions.rerunPipeline` |
-| `getPipelineStatus` | Check what's running | `analytics.queries.campaignAnalytics` |
-
-### Outreach
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `listDrafts` | Show messages needing review | `outreach.queries.list` filtered to drafts |
-| `approveMessage` | Approve a draft | `outreach.mutations.approve` |
-| `approveAll` | Approve all drafts | `outreach.mutations.bulkApprove` |
-| `sendMessage` | Send an approved message | `outreach.mutations.sendNow` |
-
-### Settings
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `updateProfile` | Set org name, sender name, etc. | `settings.mutations.update` |
-| `updateApiKey` | Configure an integration | `settings.mutations.update` |
-
-### Intelligence
-| Tool | Description | Convex function |
-|------|-------------|----------------|
-| `getSignals` | What should I focus on? | `analytics.signals.getSignals` |
-| `getMetrics` | Global dashboard metrics | `analytics.queries.global` |
-
-## UI Layout
-
-### Simplified app structure
-
-```
-┌──────────────┬─────────────────────────────────────────┐
-│  Sidebar     │  Main content                           │
-│              │                                          │
-│  MatchList   │  ┌──────────────────────────────────┐   │
-│              │  │ Chat messages                     │   │
-│  💬 Chat     │  │                                    │   │
-│  📊 Table    │  │ You: Create a donation matching    │   │
-│  📬 Review   │  │      campaign for our spring gala  │   │
-│              │  │                                    │   │
-│  ─────────── │  │ Agent: ✅ Created "Spring Gala     │   │
-│  Campaigns   │  │ Match Drive" with 6 enrichment    │   │
-│  > Spring... │  │ steps. Import a CSV to get started.│   │
-│  > Q1 Don... │  │                                    │   │
-│              │  │ [Campaign Card inline]              │   │
-│  + New       │  │                                    │   │
-│              │  │ You: Here's my list                 │   │
-│  ─────────── │  │ [file: attendees.csv]              │   │
-│  ⚙ Settings  │  │                                    │   │
-│              │  │ Agent: ✅ Imported 45 prospects.    │   │
-│              │  │ Pipeline started — enriching now.   │   │
-│              │  │                                    │   │
-│              │  │ [Progress: 12/45 enriched]         │   │
-│              │  │                                    │   │
-│              │  └──────────────────────────────────┘   │
-│              │  ┌──────────────────────────────────┐   │
-│              │  │ Message input                  📎 │   │
-│              │  └──────────────────────────────────┘   │
-└──────────────┴─────────────────────────────────────────┘
+```tsx
+useEffect(() => {
+  if (messages.length === 0 && status === "ready") {
+    sendMessage({ text: "[AUTO] Give me a briefing" });
+  }
+}, []);
 ```
 
-### Sidebar (simplified)
-- **Chat** — the main experience (default)
-- **Table** — direct access to campaign table view (for when you want the spreadsheet)
-- **Review** — direct access to review inbox (for bulk message review)
-- Campaigns list (existing)
-- Settings
+**Update system prompt** to recognise `[AUTO]` prefix as an auto-briefing trigger — respond as if the user just opened the app. Don't repeat the `[AUTO]` text back. Just give the briefing naturally.
 
-### Chat page (`/dashboard` or `/`)
-- Full-height chat interface
-- Messages stream in real-time
-- Tool calls render as inline cards:
-  - Campaign created → campaign card
-  - Prospects imported → count + progress
-  - Message approved → message preview
-  - Signals → signal cards
-  - Metrics → metric cards
-- File drop zone for CSV import
-- Message input at bottom with send button
-
-### Tool call rendering
-
-When Claude calls a tool, the UI shows it inline:
-
-```
-Agent is thinking...
-  ├─ 🔍 Checking campaign status...
-  ├─ 📊 Found: 45 prospects, 32 enriched, 8 messages drafted
-  └─ ✅ Done
-
-Your "Spring Gala Match Drive" campaign is looking good:
-- 32 of 45 prospects enriched
-- 8 personalised messages drafted and waiting for review
-- 3 prospects scored 80+ (high priority)
-
-Want me to approve and send the top-scoring messages?
+The user never sees the trigger message — filter it out of the rendered messages list:
+```tsx
+const visibleMessages = messages.filter(m => !m.content?.startsWith("[AUTO]"));
 ```
 
-## Files
+---
+
+## 2. Rich Inline Cards for Tool Results
+
+**Goal:** Tool results render as interactive UI cards, not text summaries.
+
+**Approach:** Expand the `ToolCard` component to render different card types based on which tool was called. When Claude calls `listCampaigns`, the card shows campaign cards. When it calls `listDrafts`, it shows message previews.
+
+**File:** `app/(dashboard)/chat/page.tsx` — Expand `ToolCard`
+
+**Campaign cards** (for `listCampaigns` result):
+```
+┌─────────────────────────────────┐
+│ 🎁 Alumni Reconnection   Active│
+│ Donation Matching · 8 prospects │
+│                      View →     │
+└─────────────────────────────────┘
+```
+Each card links to `/campaigns/{id}`.
+
+**Network analysis cards** (for `analyseNetwork` result):
+```
+┌─────────────────────────────────┐
+│ 🔥 Sarah Mitchell              │
+│ Former board member at Deloitte │
+│ Suggest: reconnect              │
+│              Draft message →    │
+└─────────────────────────────────┘
+```
+
+**Draft message cards** (for `listDrafts` result):
+```
+┌─────────────────────────────────┐
+│ To: Sarah Mitchell              │
+│ Deloitte matching — are you...  │
+│ 85% confidence        Approve → │
+└─────────────────────────────────┘
+```
+
+**Metrics card** (for `getMetrics` / `getBriefing` result):
+```
+┌──────┬──────┬──────┬──────────┐
+│  3   │  16  │  7   │   12%    │
+│ camp │ pros │draft │ response │
+└──────┴──────┴──────┴──────────┘
+```
+
+**Implementation:** The `ToolCard` component switches on `toolName` and renders the appropriate sub-component with the `output` data. Cards use existing shadcn Card component + our icon library.
+
+---
+
+## 3. CSV Drop into Chat
+
+**Goal:** Drag a CSV onto the chat or click an attach button. Agent reads it, shows a preview, asks which campaign, imports.
+
+**Approach:**
+- Add a file input (hidden) + paperclip button next to the send button
+- Add drag-and-drop zone over the entire chat area
+- On file drop: parse CSV client-side with PapaParse
+- Send the parsed data as the message text: "I'm importing a CSV with {N} rows. Columns: {cols}. First 3 rows: {preview}. Which campaign should I import into?"
+- The agent sees this context and calls `importProspects` after confirming the campaign
+
+**Files:**
+- `app/(dashboard)/chat/page.tsx` — add drop zone, file input, parse logic
+
+No server changes needed — the CSV is parsed client-side, preview sent as text, and the import tool handles the rest.
+
+---
+
+## 4. Email Preview Card with Approve Button
+
+**Goal:** "Show me the email for Sarah Mitchell" → renders an email card with approve/send buttons inline.
+
+**New chat tool:** `getProspectEmail`
+```typescript
+getProspectEmail: {
+  description: "Get the outreach email for a specific prospect",
+  inputSchema: z.object({ prospectName: z.string() }),
+  execute: async ({ prospectName }) => {
+    // Search prospects by name
+    // Find their latest outreach message
+    // Return: prospect info + message content + status + confidence
+  },
+}
+```
+
+**Rich card rendering:** When `getProspectEmail` completes, render:
+```
+┌────────────────────────────────────────────┐
+│ To: Sarah Mitchell <sarah@deloitte.com>    │
+│ Subject: Reconnecting after the gala       │
+│ Status: Draft · 85% confidence             │
+│────────────────────────────────────────────│
+│ Sarah — it's been two years since...       │
+│ ...                                        │
+│────────────────────────────────────────────│
+│ [Approve]  [Edit in Review →]              │
+└────────────────────────────────────────────┘
+```
+
+The **Approve** button calls `approveMessage` directly from the card — no need to go to the Review page.
+
+**Files:**
+- `app/api/chat/route.ts` — add `getProspectEmail` tool
+- `app/(dashboard)/chat/page.tsx` — render email card in ToolCard
+
+---
+
+## 5. Live Progress Updates
+
+**Goal:** After "re-run the pipeline", show live progress in the chat.
+
+**Approach:** After `runPipeline` tool completes, inject a polling component that queries enrichment progress and updates inline until done.
+
+**New component:** `components/chat/pipeline-progress.tsx`
+- Takes `campaignId` prop
+- Uses `useQuery(api.analytics.queries.campaignAnalytics)` to get enrichment counts
+- Renders an inline progress bar: "5/8 enriched · 3 messages generated"
+- Updates reactively (Convex queries are live)
+- Auto-dismisses or collapses when complete
+
+**Integration:** The `ToolCard` for `runPipeline` renders `<PipelineProgress>` after the tool completes, instead of just "Pipeline running".
+
+**Files:**
+- `components/chat/pipeline-progress.tsx` — live progress component
+- `app/(dashboard)/chat/page.tsx` — render progress in ToolCard for runPipeline
+
+---
+
+## Files Summary
 
 ### Create
 | File | Purpose |
 |------|---------|
-| `app/api/chat/route.ts` | Streaming chat endpoint with tool definitions |
-| `app/(dashboard)/chat/page.tsx` | Chat page (becomes the default landing) |
-| `components/chat/chat-interface.tsx` | Main chat UI using `useChat` |
-| `components/chat/message-bubble.tsx` | Renders user + assistant messages |
-| `components/chat/tool-call-card.tsx` | Renders tool call results as inline cards |
-| `components/chat/file-drop.tsx` | CSV file drop zone in chat input |
-| `lib/chat/tools.ts` | Tool definitions (shared between route and UI) |
-| `lib/chat/convex-tools.ts` | Tool execute functions that call Convex |
+| `components/chat/pipeline-progress.tsx` | Live enrichment progress bar |
 
 ### Modify
 | File | Change |
 |------|--------|
-| `components/sidebar/app-sidebar.tsx` | Simplify nav: Chat (default), Table, Review, Campaigns, Settings |
-| `app/page.tsx` | Redirect to `/chat` instead of `/dashboard` |
-| `app/(dashboard)/dashboard/page.tsx` | Keep but make secondary — chat is primary |
+| `app/(dashboard)/chat/page.tsx` | Auto-briefing on load, rich tool cards, CSV drop zone, email card with approve, pipeline progress |
+| `app/api/chat/route.ts` | Add `getProspectEmail` tool, update system prompt for auto-briefing |
 
-### Dependencies
-```bash
-# Already installed: ai, @ai-sdk/anthropic
-# No new deps needed — useChat is part of the ai package
-```
-
-## Chat API Route
-
-`app/api/chat/route.ts` — the streaming endpoint:
-
-```typescript
-import { streamText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
-// Import Convex client for server-side calls
-
-export async function POST(req: Request) {
-  const { messages } = await req.json();
-
-  const result = streamText({
-    model: anthropic("claude-sonnet-4-20250514"),
-    system: `You are MatchList, an AI membership agent for non-profits. You help organisations manage outreach campaigns, enrich prospect data, generate personalised messages, and track engagement.
-
-You have access to tools to create campaigns, import prospects, check status, approve messages, and more. Use them proactively — don't just describe what you could do, do it.
-
-Be concise, warm, and action-oriented. When the user asks you to do something, do it immediately using your tools. Show results inline.`,
-    messages,
-    tools: {
-      createCampaign: { ... },
-      listCampaigns: { ... },
-      // ... all tools
-    },
-    maxSteps: 5, // Allow multi-step tool calling
-  });
-
-  return result.toDataStreamResponse();
-}
-```
-
-## Key design decisions
-
-1. **Chat is the default page** — not the dashboard. The dashboard becomes a secondary view.
-2. **Tool calls are visible** — the user sees what the agent is doing (not a black box).
-3. **The table and review views still exist** — for when you want to see/edit data directly. But you reach them from the sidebar, not as the primary experience.
-4. **File upload in chat** — drag a CSV onto the chat or click the attach button.
-5. **Convex calls happen server-side** — the API route imports the Convex client and calls functions directly. No need for auth passthrough since the chat route is already auth-protected by Clerk middleware.
-6. **Multi-step tool calling** — `maxSteps: 5` lets Claude chain actions (create campaign → import → run pipeline) in one turn.
+---
 
 ## Verification
-
-- [ ] Chat page loads as the default experience
-- [ ] User can type "create a donation matching campaign called Spring Gala" → campaign created
-- [ ] User can drop a CSV → prospects imported, pipeline starts
-- [ ] "How's my campaign going?" → shows metrics inline
-- [ ] "Approve all drafts" → messages approved with confirmation
-- [ ] "What should I focus on?" → signals surfaced inline
-- [ ] Tool calls render as cards, not raw JSON
-- [ ] Streaming feels responsive
-- [ ] Sidebar still gives direct access to Table, Review, Settings
+- [ ] Chat auto-sends briefing on load — agent greets with live status
+- [ ] "Show me my campaigns" → renders clickable campaign cards
+- [ ] "Who should I reconnect with?" → renders prospect recommendation cards
+- [ ] Drag CSV onto chat → shows preview, asks for campaign, imports
+- [ ] "Show me the email for Sarah" → renders email preview with approve button
+- [ ] Approve button in email card works
+- [ ] "Re-run pipeline" → shows live progress bar that updates reactively
+- [ ] All cards are clean, minimal, clickable where appropriate

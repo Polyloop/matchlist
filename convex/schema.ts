@@ -50,6 +50,7 @@ export default defineSchema({
     followUpDelayDays: v.number(),
     followUpMaxAttempts: v.number(),
     promptInstructions: v.optional(v.string()),
+    outreachIntent: v.optional(v.string()),
   }).index("by_campaign", ["campaignId"]),
 
   campaignEnrichmentConfigs: defineTable({
@@ -78,6 +79,15 @@ export default defineSchema({
     donorScore: v.optional(v.number()),
     engagementStatus: v.optional(v.string()),
     lastAgentAction: v.optional(v.number()),
+    // Relationship context
+    role: v.optional(v.string()),
+    membershipStatus: v.optional(v.string()),
+    memberSince: v.optional(v.string()),
+    lastEngagement: v.optional(v.string()),
+    engagementTypes: v.optional(v.array(v.string())),
+    donationHistory: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    affinity: v.optional(v.string()),
   })
     .index("by_org", ["orgId"])
     .index("by_campaign", ["campaignId"])

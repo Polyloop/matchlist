@@ -16,6 +16,13 @@ export const importProspects = mutation({
         employer: v.optional(v.string()),
         team: v.optional(v.string()),
         campaign: v.optional(v.string()),
+        role: v.optional(v.string()),
+        membershipStatus: v.optional(v.string()),
+        memberSince: v.optional(v.string()),
+        lastEngagement: v.optional(v.string()),
+        engagementType: v.optional(v.string()),
+        donationHistory: v.optional(v.string()),
+        notes: v.optional(v.string()),
       }),
     ),
   },
@@ -74,6 +81,10 @@ export const importProspects = mutation({
         const teamListId = await resolveListId("team", row.team);
         const campaignListId = await resolveListId("campaign", row.campaign);
 
+        const engagementTypes = row.engagementType
+          ? row.engagementType.split(",").map((t) => t.trim()).filter(Boolean)
+          : undefined;
+
         const prospectId = await ctx.db.insert("prospects", {
           orgId,
           campaignId: args.campaignId,
@@ -85,6 +96,13 @@ export const importProspects = mutation({
           teamListId,
           campaignListId,
           matchEligible: false,
+          role: row.role || undefined,
+          membershipStatus: row.membershipStatus || undefined,
+          memberSince: row.memberSince || undefined,
+          lastEngagement: row.lastEngagement || undefined,
+          engagementTypes,
+          donationHistory: row.donationHistory || undefined,
+          notes: row.notes || undefined,
         });
 
         // Create enrichment job
