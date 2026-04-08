@@ -39,7 +39,7 @@ const campaignIcons: Record<string, any> = {
 };
 
 export default function ChatPage() {
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, stop, setMessages, status } = useChat({
     transport,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
@@ -47,16 +47,8 @@ export default function ChatPage() {
   const [dragging, setDragging] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const hasSentBriefing = useRef(false);
   const isLoading = status === "streaming" || status === "submitted";
 
-  // Auto-briefing on first load
-  useEffect(() => {
-    if (!hasSentBriefing.current && status === "ready" && messages.length === 0) {
-      hasSentBriefing.current = true;
-      sendMessage({ text: "[BRIEFING] Give me a morning briefing of what's happening." });
-    }
-  }, [status, messages.length, sendMessage]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -130,16 +122,43 @@ export default function ChatPage() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
           {visibleMessages.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center gap-4 pt-20 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full bg-primary/10">
-                <HugeiconsIcon icon={AiBeautifyIcon} strokeWidth={1.5} className="size-7 text-primary" />
+            <div className="flex flex-col items-center gap-6 pt-16 text-center">
+              <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
+                <HugeiconsIcon icon={AiBeautifyIcon} strokeWidth={1.5} className="size-8 text-primary" />
               </div>
-              <div>
-                <h1 className="text-xl font-semibold">MatchList Agent</h1>
-                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                  Your AI membership officer. Understanding relationships, personalising outreach, deepening engagement.
+              <div className="space-y-2">
+                <h1 className="text-2xl font-semibold tracking-tight">Hey, I'm Scout</h1>
+                <p className="max-w-md text-sm text-muted-foreground leading-relaxed">
+                  Your AI membership agent. I analyse your network, find the right people to reconnect with, draft personalised outreach, and help you deepen the relationships that matter.
                 </p>
               </div>
+
+              {/* Suggestion cards */}
+              <div className="grid grid-cols-2 gap-3 max-w-lg mx-auto mt-4">
+                {[
+                  { emoji: "👋", label: "Give me a briefing", description: "What's happening across my campaigns", prompt: "Give me a briefing — what's happening?" },
+                  { emoji: "🔍", label: "Analyse my network", description: "Who should I reconnect with first", prompt: "Analyse my network — who should I reconnect with?" },
+                  { emoji: "📬", label: "Check my drafts", description: "Messages waiting for review", prompt: "How many drafts need review? Show me them." },
+                  { emoji: "🚀", label: "Create a campaign", description: "Start a new outreach campaign", prompt: "Help me create a new campaign" },
+                ].map((s) => (
+                  <button
+                    key={s.label}
+                    onClick={() => sendMessage({ text: s.prompt })}
+                    className="flex items-start gap-3 rounded-lg border p-3 text-left transition-all hover:bg-muted/50 hover:shadow-sm hover:-translate-y-px"
+                  >
+                    <span className="text-lg mt-0.5">{s.emoji}</span>
+                    <div>
+                      <p className="text-xs font-medium">{s.label}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{s.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Drop hint */}
+              <p className="text-[10px] text-muted-foreground/50 mt-6">
+                Drop a CSV to import contacts, or just ask me anything
+              </p>
             </div>
           )}
 
@@ -157,15 +176,27 @@ export default function ChatPage() {
               <div className={cn("min-w-0 max-w-[85%] space-y-2", message.role === "user" && "text-right")}>
                 {message.parts.map((part, i) => {
                   if (part.type === "text" && (part as any).text?.trim()) {
+                    const text = (part as any).text;
                     return (
-                      <div key={i} className={cn(
-                        "inline-block rounded-lg px-4 py-2.5 text-sm leading-relaxed",
-                        message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
-                      )}>
-                        {message.role === "user" ? (
-                          <div className="whitespace-pre-wrap">{(part as any).text}</div>
-                        ) : (
-                          <Streamdown>{(part as any).text}</Streamdown>
+                      <div key={i} className="group relative">
+                        <div className={cn(
+                          "inline-block rounded-lg px-4 py-2.5 text-sm leading-relaxed",
+                          message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
+                        )}>
+                          {message.role === "user" ? (
+                            <div className="whitespace-pre-wrap">{text}</div>
+                          ) : (
+                            <Streamdown>{text}</Streamdown>
+                          )}
+                        </div>
+                        {/* Copy button on hover for assistant messages */}
+                        {message.role === "assistant" && (
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(text); }}
+                            className="absolute -bottom-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity text-[9px] text-muted-foreground/50 hover:text-muted-foreground"
+                          >
+                            Copy
+                          </button>
                         )}
                       </div>
                     );
@@ -191,25 +222,48 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input area */}
       <div className="border-t bg-background px-4 py-3">
-        <form onSubmit={handleSubmit} className="mx-auto flex max-w-2xl gap-2">
-          <input type="file" ref={fileInputRef} accept=".csv" className="hidden" onChange={handleFileInput} />
-          <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} className="shrink-0">
-            <HugeiconsIcon icon={Attachment01Icon} strokeWidth={1.5} className="size-4" />
-          </Button>
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me anything..."
-            className="min-h-[44px] max-h-[120px] resize-none text-sm"
-            rows={1}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
-          />
-          <Button type="submit" disabled={isLoading || !input.trim()} size="icon">
-            <HugeiconsIcon icon={SentIcon} strokeWidth={1.5} className="size-4" />
-          </Button>
-        </form>
+        <div className="mx-auto max-w-2xl space-y-2">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input type="file" ref={fileInputRef} accept=".csv" className="hidden" onChange={handleFileInput} />
+            <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} className="shrink-0" title="Attach CSV">
+              <HugeiconsIcon icon={Attachment01Icon} strokeWidth={1.5} className="size-4" />
+            </Button>
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask Scout anything..."
+              className="min-h-[44px] max-h-[120px] resize-none text-sm"
+              rows={1}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
+            />
+            {isLoading ? (
+              <Button type="button" size="icon" variant="outline" onClick={() => stop()}>
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.5} className="size-4" />
+              </Button>
+            ) : (
+              <Button type="submit" disabled={!input.trim()} size="icon">
+                <HugeiconsIcon icon={SentIcon} strokeWidth={1.5} className="size-4" />
+              </Button>
+            )}
+          </form>
+
+          {/* New chat + status */}
+          {visibleMessages.length > 0 && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setMessages([])}
+                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              >
+                New conversation
+              </button>
+              <span className="text-[10px] text-muted-foreground/40">
+                {status === "streaming" ? "Scout is typing..." : status === "submitted" ? "Thinking..." : ""}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -255,7 +309,7 @@ function ToolCard({ toolType, state, input, output, errorText }: {
           {output.campaigns.map((c: any) => (
             <Link key={c.id} href={`/campaigns/${c.id}`}>
               <Card className="hover:shadow-sm transition-all hover:-translate-y-px">
-                <CardContent className="!p-3 flex items-center gap-3">
+                <CardContent className="flex items-center gap-3">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
                     <HugeiconsIcon icon={campaignIcons[c.type] || GiftIcon} strokeWidth={1.5} className="size-3.5" />
                   </div>
@@ -281,7 +335,7 @@ function ToolCard({ toolType, state, input, output, errorText }: {
           </p>
           {output.recommendations.map((r: any, i: number) => (
             <Card key={i} className={cn(r.priority === "high" && "border-amber-200")}>
-              <CardContent className="!p-3">
+              <CardContent>
                 <div className="flex items-center gap-2">
                   <span className="text-xs">{r.priority === "high" ? "🔥" : "💡"}</span>
                   <span className="text-xs font-medium">{r.prospectName}</span>
@@ -327,7 +381,7 @@ function ToolCard({ toolType, state, input, output, errorText }: {
           <p className="text-[11px] text-muted-foreground">{output.count} drafts to review</p>
           {output.drafts.map((d: any) => (
             <Card key={d.id}>
-              <CardContent className="!p-3">
+              <CardContent>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium">{d.prospectName}</span>
                   {d.confidenceScore && <span className="text-[9px] text-muted-foreground">{d.confidenceScore}%</span>}
@@ -344,7 +398,7 @@ function ToolCard({ toolType, state, input, output, errorText }: {
     if (toolName === "runPipeline" && output.success) {
       return (
         <Card className="max-w-xs">
-          <CardContent className="!p-3">
+          <CardContent>
             <div className="flex items-center gap-2">
               <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={1.5} className="size-3.5 text-emerald-500" />
               <span className="text-xs font-medium">Pipeline started for {output.triggered} prospects</span>
@@ -380,7 +434,7 @@ function ToolCard({ toolType, state, input, output, errorText }: {
   // Default card for other tools
   return (
     <Card className="max-w-xs">
-      <CardContent className="!p-3">
+      <CardContent>
         <div className="flex items-center gap-2">
           {isComplete ? (
             <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={1.5} className="size-3.5 text-emerald-500" />

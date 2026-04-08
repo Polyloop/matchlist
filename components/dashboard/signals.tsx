@@ -35,7 +35,7 @@ export function SignalsPanel() {
           const config = typeConfig[signal.type] || typeConfig.insight;
           const content = (
             <Card className={cn("transition-all duration-150", signal.href && "hover:shadow-sm hover:-translate-y-px")}>
-              <CardContent className="flex items-start gap-3 !p-3">
+              <CardContent className="flex items-start gap-3">
                 <div className={cn("flex size-7 shrink-0 items-center justify-center rounded-md", config.bg, config.accent)}>
                   <HugeiconsIcon icon={config.icon} strokeWidth={1.5} className="size-3.5" />
                 </div>

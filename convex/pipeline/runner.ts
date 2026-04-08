@@ -344,39 +344,145 @@ async function executeEnrichment(
       return { employer: prospect.employer || null };
 
     case "match_programme": {
-      const apiKey = await getKey("DOUBLE_THE_DONATION_API_KEY");
-      if (!apiKey || !prospect.employer) {
-        return {
-          match_eligible: false,
-          match_ratio: 0,
-          match_cap: 0,
-          note: !apiKey ? "Double the Donation API key not configured" : "No employer to look up",
-        };
+      if (!prospect.employer) {
+        return { match_eligible: false, match_ratio: 0, match_cap: 0, note: "No employer to look up" };
       }
-      // Call Double the Donation API
-      try {
-        const response = await fetch(
-          `https://doublethedonation.com/api/v2/companies/search?query=${encodeURIComponent(prospect.employer)}`,
-          { headers: { "Authorization": `Bearer ${apiKey}` } },
-        );
-        if (!response.ok) {
-          return { match_eligible: false, match_ratio: 0, match_cap: 0, note: `API error: ${response.status}` };
-        }
-        const data = await response.json();
-        const company = data?.companies?.[0];
-        if (!company) {
-          return { match_eligible: false, match_ratio: 0, match_cap: 0, note: "No matching company found" };
-        }
-        return {
-          match_eligible: company.matching_gift_offered ?? false,
-          match_ratio: company.match_ratio ?? 1,
-          match_cap: company.match_cap ?? 0,
-          programme_name: company.matching_gift_program_name || null,
-          company_name: company.name,
-        };
-      } catch (e) {
-        return { match_eligible: false, match_ratio: 0, match_cap: 0, note: `Error: ${e instanceof Error ? e.message : "Unknown"}` };
+
+      // Try Double the Donation API first
+      const dtdKey = await getKey("DOUBLE_THE_DONATION_API_KEY");
+      if (dtdKey) {
+        try {
+          const response = await fetch(
+            `https://doublethedonation.com/api/v2/companies/search?query=${encodeURIComponent(prospect.employer)}`,
+            { headers: { "Authorization": `Bearer ${dtdKey}` } },
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const company = data?.companies?.[0];
+            if (company) {
+              return {
+                match_eligible: company.matching_gift_offered ?? false,
+                match_ratio: company.match_ratio ?? 1,
+                match_cap: company.match_cap ?? 0,
+                programme_name: company.matching_gift_program_name || null,
+                company_name: company.name,
+                source: "double_the_donation",
+              };
+            }
+          }
+        } catch { /* fall through to Firecrawl */ }
       }
+
+      // Fallback: use Firecrawl + AI to research matching programmes from public sources
+      const firecrawlKey = await getKey("FIRECRAWL_API_KEY");
+      if (firecrawlKey) {
+        try {
+          const domain = prospect.employer.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
+          // Search for matching gift / CSR info on the company website
+          const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${firecrawlKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: `https://${domain}`,
+              formats: ["extract"],
+              extract: {
+                schema: {
+                  type: "object",
+                  properties: {
+                    has_matching_gift_programme: { type: "boolean", description: "Does this company offer a matching gift / donation matching programme for employees?" },
+                    match_ratio: { type: "string", description: "The matching ratio (e.g. '1:1', '2:1', '0.5:1'). Return null if unknown." },
+                    match_cap: { type: "string", description: "The maximum amount the company will match per employee per year (e.g. '$10,000'). Return null if unknown." },
+                    programme_name: { type: "string", description: "The name of the matching gift or corporate giving programme" },
+                    volunteer_grant_programme: { type: "boolean", description: "Does the company offer volunteer grants (donations for employee volunteer hours)?" },
+                    csr_summary: { type: "string", description: "Brief summary of the company's CSR / corporate giving / community involvement" },
+                    giving_page_url: { type: "string", description: "URL of the company's giving/matching/CSR page if found" },
+                  },
+                },
+              },
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const extract = data?.data?.extract || {};
+
+            // Parse match ratio from string like "1:1" to number
+            let matchRatio = 0;
+            if (extract.match_ratio) {
+              const parts = String(extract.match_ratio).split(":");
+              if (parts.length === 2) matchRatio = parseFloat(parts[0]) / parseFloat(parts[1]);
+              else matchRatio = parseFloat(extract.match_ratio) || 0;
+            }
+
+            // Parse match cap from string like "$10,000" to number
+            let matchCap = 0;
+            if (extract.match_cap) {
+              matchCap = parseFloat(String(extract.match_cap).replace(/[$,]/g, "")) || 0;
+            }
+
+            const matchEligible = extract.has_matching_gift_programme === true;
+
+            // If Firecrawl found a match programme, return it
+            if (matchEligible) {
+              return {
+                match_eligible: true,
+                match_ratio: matchRatio,
+                match_cap: matchCap,
+                programme_name: extract.programme_name || null,
+                volunteer_grants: extract.volunteer_grant_programme || false,
+                csr_summary: extract.csr_summary || null,
+                giving_page_url: extract.giving_page_url || null,
+                source: "firecrawl_web_research",
+                company_name: prospect.employer,
+              };
+            }
+            // If Firecrawl didn't find it, fall through to AI research
+            // (homepage often doesn't mention matching — AI knows from training data)
+          }
+        } catch (e) {
+          // Fall through to AI-only research
+        }
+      }
+
+      // Last resort: use AI to research based on general knowledge
+      const anthropicKey = await getKey("ANTHROPIC_API_KEY");
+      if (anthropicKey) {
+        try {
+          const { createAnthropic: createProvider } = await import("@ai-sdk/anthropic");
+          const { generateText: genText } = await import("ai");
+          const provider = createProvider({ apiKey: anthropicKey });
+          const { text } = await genText({
+            model: provider("claude-sonnet-4-20250514"),
+            system: "You research corporate giving programmes. Return ONLY valid JSON.",
+            prompt: `Does ${prospect.employer} have an employee matching gift programme? Return JSON: {"match_eligible": boolean, "match_ratio": number (e.g. 1 for 1:1), "match_cap": number (annual cap in USD, 0 if unknown), "programme_name": "string or null", "confidence": "high|medium|low", "notes": "brief explanation of what you know"}`,
+            maxOutputTokens: 300,
+          });
+
+          try {
+            const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+            const parsed = JSON.parse(cleaned);
+            return {
+              match_eligible: parsed.match_eligible ?? false,
+              match_ratio: parsed.match_ratio ?? 0,
+              match_cap: parsed.match_cap ?? 0,
+              programme_name: parsed.programme_name || null,
+              confidence: parsed.confidence || "low",
+              notes: parsed.notes || null,
+              source: "ai_research",
+              company_name: prospect.employer,
+            };
+          } catch {
+            return { match_eligible: false, match_ratio: 0, match_cap: 0, note: "Could not parse AI response", source: "ai_research" };
+          }
+        } catch (e) {
+          return { match_eligible: false, match_ratio: 0, match_cap: 0, note: `AI research failed: ${e instanceof Error ? e.message : "Unknown"}` };
+        }
+      }
+
+      return { match_eligible: false, match_ratio: 0, match_cap: 0, note: "No API keys configured for matching gift research" };
     }
 
     case "company_research":
@@ -487,7 +593,9 @@ async function executeEnrichment(
         });
 
         try {
-          const parsed = JSON.parse(text);
+          // Strip markdown code fences if present
+          const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          const parsed = JSON.parse(cleaned);
           return {
             score: Math.max(0, Math.min(100, parsed.score || 50)),
             reasoning: parsed.reasoning || "",
@@ -500,6 +608,11 @@ async function executeEnrichment(
         return { score: 50, reasoning: `Error: ${e instanceof Error ? e.message : "Unknown"}`, signals: [] };
       }
     }
+
+    case "ai_message":
+      // AI message generation is handled by the pipeline engine (generateMessage),
+      // not the enrichment runner. Mark as complete — the actual message is created separately.
+      return { status: "handled_by_pipeline", note: "Message generation runs after all enrichments complete" };
 
     default:
       return { note: `No handler for enrichment type: ${enrichmentType}` };

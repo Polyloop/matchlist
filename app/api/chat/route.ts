@@ -19,9 +19,9 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-20250514"),
-    system: `You are MatchList, an autonomous membership AI agent for non-profits. You help organisations understand their alumni, member, and supporter networks — and take intelligent action to deepen those relationships.
+    system: `You are Scout, an autonomous membership AI agent built by MatchList for non-profits. You help organisations understand their alumni, member, and supporter networks — and take intelligent action to deepen those relationships.
 
-You are not just an outreach tool. You are a digital membership and research officer who understands relationship history, identifies the right people to engage, and knows the right approach for each person.
+You are not just an outreach tool. You are a digital membership and research officer who understands relationship history, identifies the right people to engage, and knows the right approach for each person. You speak in first person as Scout.
 
 PERSONALITY: Warm, concise, action-oriented. Use tools immediately. After executing, summarise plainly and suggest next steps.
 
@@ -32,6 +32,8 @@ IMPORTANT RULES:
 - Use analyseNetwork to understand the network BEFORE suggesting actions
 - When greeted or asked an open question ("good morning", "what's happening"), use getBriefing first
 - If the message starts with [BRIEFING], call getBriefing and respond naturally as a greeting. Never mention the [BRIEFING] tag.
+- STAY FOCUSED: You are a membership and outreach agent. Everything you do should relate to prospects, campaigns, relationships, or outreach. If asked something unrelated, politely redirect to how you can help with their network.
+- Use researchCompany ONLY when preparing outreach for a specific prospect or when a user asks about a prospect's employer. Never for general curiosity.
 
 KEY CAPABILITIES:
 - Analyse networks: "Who should we reconnect with?" — use analyseNetwork to prioritise by relationship history + match potential
@@ -149,6 +151,63 @@ When recommending people, explain WHY each person matters and WHAT approach to u
             });
             return { success: true, imported: r.imported, errors: r.errors.length, total: r.total };
           } catch (e) { return { success: false, error: String(e) }; }
+        },
+      },
+      researchCompany: {
+        description: "Research a prospect's employer for matching gift programmes and CSR activity. ONLY use this when a user asks about a specific prospect's employer or when preparing outreach for a prospect. Do NOT use for general company research unrelated to a prospect.",
+        inputSchema: z.object({
+          companyName: z.string().describe("The employer name from a prospect record"),
+          prospectName: z.string().optional().describe("The prospect this research is for"),
+        }),
+        execute: async ({ companyName, question }) => {
+          try {
+            const settings = await convex.query(api.settings.queries.get);
+            const firecrawlKey = Object.entries(settings).find(([k]) => k === "FIRECRAWL_API_KEY")?.[1];
+
+            if (!firecrawlKey || firecrawlKey.includes("...")) {
+              return { error: "Firecrawl API key not configured. Add it in Settings → Integrations." };
+            }
+
+            const domain = companyName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
+            const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${firecrawlKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                url: `https://${domain}`,
+                formats: ["extract"],
+                extract: {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      has_matching_gift_programme: { type: "boolean", description: "Does this company match employee charitable donations?" },
+                      match_ratio: { type: "string", description: "Match ratio e.g. '1:1' or '2:1'" },
+                      match_cap: { type: "string", description: "Annual matching cap e.g. '$10,000'" },
+                      programme_name: { type: "string", description: "Name of matching/giving programme" },
+                      volunteer_programme: { type: "boolean", description: "Do they have employee volunteer programmes?" },
+                      volunteer_grants: { type: "boolean", description: "Do they give grants for employee volunteer hours?" },
+                      csr_summary: { type: "string", description: "Summary of CSR / community involvement" },
+                      recent_giving_news: { type: "string", description: "Any recent news about corporate giving or community involvement" },
+                      key_contacts: { type: "string", description: "CSR/foundation team contacts if listed" },
+                      about_summary: { type: "string", description: "Brief company description" },
+                    },
+                  },
+                  prompt: question || "Extract all information about this company's charitable giving, matching gift programmes, volunteer programmes, and CSR activity.",
+                },
+              }),
+            });
+
+            if (!response.ok) {
+              return { error: `Firecrawl returned ${response.status}`, companyName };
+            }
+
+            const data = await response.json();
+            return { companyName, website: `https://${domain}`, ...(data?.data?.extract || {}) };
+          } catch (e) {
+            return { error: String(e), companyName };
+          }
         },
       },
       getProspectEmail: {

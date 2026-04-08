@@ -143,10 +143,10 @@ export function ProspectDetailPanel({ open, onOpenChange, prospectId }: Prospect
           <div>
             <h3 className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground mb-2">Enrichment Data</h3>
             <div className="space-y-1.5">
-              {profile.enrichments.length === 0 ? (
+              {profile.enrichments.filter((e: any) => e.enrichmentType !== "ai_message").length === 0 ? (
                 <p className="text-xs text-muted-foreground">No enrichment data yet</p>
               ) : (
-                profile.enrichments.map((e: any) => {
+                profile.enrichments.filter((e: any) => e.enrichmentType !== "ai_message").map((e: any) => {
                   const def = getEnrichmentType(e.enrichmentType);
                   const label = def?.label || e.enrichmentType.replace(/_/g, " ");
                   return (
