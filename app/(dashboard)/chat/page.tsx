@@ -8,9 +8,14 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@/components/ui/input-group";
 import { PipelineProgress } from "@/components/chat/pipeline-progress";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -126,7 +131,7 @@ export default function ChatPage() {
               <div className="space-y-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Hey, I'm Scout</h1>
                 <p className="max-w-md text-sm text-muted-foreground leading-relaxed">
-                  Your AI membership agent. I analyse your network, find the right people to reconnect with, draft personalised outreach, and help you deepen the relationships that matter.
+                  Your AI network agent. I analyse your network, find the right people to reconnect with, draft personalised outreach, and help you deepen the relationships that matter.
                 </p>
               </div>
 
@@ -219,48 +224,52 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Input area */}
-      <div className="border-t bg-background px-4 py-3">
-        <div className="mx-auto max-w-2xl space-y-2">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input type="file" ref={fileInputRef} accept=".csv" className="hidden" onChange={handleFileInput} />
-            <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} className="shrink-0" title="Attach CSV">
-              <HugeiconsIcon icon={Attachment01Icon} strokeWidth={1.5} className="size-4" />
-            </Button>
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Scout anything..."
-              className="min-h-[44px] max-h-[120px] resize-none text-sm"
-              rows={1}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
-            />
-            {isLoading ? (
-              <Button type="button" size="icon" variant="outline" onClick={() => stop()}>
-                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.5} className="size-4" />
-              </Button>
-            ) : (
-              <Button type="submit" disabled={!input.trim()} size="icon">
-                <HugeiconsIcon icon={SentIcon} strokeWidth={1.5} className="size-4" />
-              </Button>
-            )}
-          </form>
-
-          {/* New chat + status */}
-          {visibleMessages.length > 0 && (
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setMessages([])}
-                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+      {/* Input area — fixed to bottom */}
+      <div className="sticky bottom-0 bg-background px-4 pb-4 pt-2">
+        <form onSubmit={handleSubmit} className="mx-auto max-w-2xl">
+          <input type="file" ref={fileInputRef} accept=".csv" className="hidden" onChange={handleFileInput} />
+          <InputGroup className="h-auto rounded-lg shadow-sm">
+            <InputGroupAddon align="block-end" className="gap-0 px-2 pb-1.5 pt-0">
+              <InputGroupButton
+                size="icon-xs"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach CSV"
               >
-                New conversation
-              </button>
-              <span className="text-[10px] text-muted-foreground/40">
+                <HugeiconsIcon icon={Attachment01Icon} strokeWidth={1.5} className="size-4" />
+              </InputGroupButton>
+              {visibleMessages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setMessages([])}
+                  className="ml-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                >
+                  New
+                </button>
+              )}
+              <span className="flex-1" />
+              <span className="text-[10px] text-muted-foreground/40 mr-1">
                 {status === "streaming" ? "Scout is typing..." : status === "submitted" ? "Thinking..." : ""}
               </span>
-            </div>
-          )}
-        </div>
+              {isLoading ? (
+                <InputGroupButton size="icon-sm" variant="outline" onClick={() => stop()}>
+                  <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.5} className="size-3.5" />
+                </InputGroupButton>
+              ) : (
+                <InputGroupButton size="icon-sm" variant="default" type="submit" disabled={!input.trim()}>
+                  <HugeiconsIcon icon={SentIcon} strokeWidth={1.5} className="size-3.5" />
+                </InputGroupButton>
+              )}
+            </InputGroupAddon>
+            <InputGroupTextarea
+              value={input}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+              placeholder="Ask Scout anything..."
+              rows={1}
+              className="min-h-[44px] max-h-[120px] text-sm"
+              onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e as any); } }}
+            />
+          </InputGroup>
+        </form>
       </div>
     </div>
   );

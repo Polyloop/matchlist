@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 
 /**
- * Pull contacts from Salesforce NPSP into Matchlist as prospects.
+ * Pull contacts from Salesforce NPSP into Scout as prospects.
  */
 export const pullContacts = internalAction({
   args: {

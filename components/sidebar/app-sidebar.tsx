@@ -73,9 +73,9 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/dashboard" />}>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">MatchList</span>
+                <span className="truncate font-semibold">Scout</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Non-profit outreach
+                  Network agent 
                 </span>
               </div>
             </SidebarMenuButton>
