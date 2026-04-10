@@ -25,8 +25,15 @@ const PROSPECT_FIELDS = [
   "email",
   "linkedin_url",
   "employer",
+  "role",
   "team",
   "campaign",
+  "membership_status",
+  "member_since",
+  "last_engagement",
+  "engagement_type",
+  "donation_history",
+  "notes",
 ];
 
 const STEPS = [
@@ -207,6 +214,13 @@ export function CsvUpload({ campaignId }: CsvUploadProps = {}) {
           employer: mapped.employer || undefined,
           team: mapped.team || undefined,
           campaign: mapped.campaign || undefined,
+          role: mapped.role || undefined,
+          membershipStatus: mapped.membership_status || undefined,
+          memberSince: mapped.member_since || undefined,
+          lastEngagement: mapped.last_engagement || undefined,
+          engagementType: mapped.engagement_type || undefined,
+          donationHistory: mapped.donation_history || undefined,
+          notes: mapped.notes || undefined,
         };
       });
 

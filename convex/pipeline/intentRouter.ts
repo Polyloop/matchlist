@@ -168,5 +168,23 @@ export const routeIntent = internalMutation({
         break;
       }
     }
+
+    // Auto-append supporter fact for every response classification
+    const factMessages: Record<string, string> = {
+      interested: `Responded with interest — ${args.reasoning}`,
+      positive: `Responded positively — ${args.reasoning}`,
+      question: `Asked a question — ${args.reasoning}`,
+      referral: `Referred to someone else — ${args.reasoning}`,
+      not_now: `Said not now — re-engagement scheduled. ${args.reasoning}`,
+      declined: `Declined — automation stopped. ${args.reasoning}`,
+      out_of_office: `Out of office — rescheduled for 7 days`,
+    };
+    await ctx.db.insert("supporterFacts", {
+      orgId: args.orgId,
+      prospectId: args.prospectId,
+      factType: "response",
+      content: factMessages[args.intent] || `Responded: ${args.intent}`,
+      source: "pipeline",
+    });
   },
 });

@@ -154,7 +154,7 @@ export default function CampaignTablePage() {
     ];
 
     const enrichmentCols: ColumnDef<NonNullable<typeof prospects>[number]>[] = (enrichmentConfigs ?? [])
-      .filter((c) => c.enabled)
+      .filter((c) => c.enabled && c.enrichmentType !== "ai_message")
       .sort((a, b) => a.columnOrder - b.columnOrder)
       .map((config) => ({
         id: `enrichment_${config.enrichmentType}`,

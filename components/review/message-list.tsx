@@ -126,7 +126,7 @@ export function MessageList({ messages, selectedId, onSelect }: MessageListProps
       </div>
 
       {/* Message list */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
             No messages
@@ -181,7 +181,7 @@ export function MessageList({ messages, selectedId, onSelect }: MessageListProps
             })}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

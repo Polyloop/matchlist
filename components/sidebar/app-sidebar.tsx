@@ -33,7 +33,8 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { label: "Dashboard", href: "/dashboard", icon: DashboardSquare01Icon },
+  { label: "Scout", href: "/chat", icon: DashboardSquare01Icon },
+  { label: "Overview", href: "/dashboard", icon: UserGroupIcon },
   { label: "Review", href: "/review", icon: MailSend01Icon },
 ];
 
@@ -71,13 +72,10 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/dashboard" />}>
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <HugeiconsIcon icon={TargetIcon} strokeWidth={1.5} className="size-4" />
-              </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">MatchList</span>
+                <span className="truncate font-semibold">Scout</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Non-profit outreach
+                  Network agent 
                 </span>
               </div>
             </SidebarMenuButton>

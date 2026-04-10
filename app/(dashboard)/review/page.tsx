@@ -98,7 +98,7 @@ export default function ReviewPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Review</h1>
       <div className="flex h-[calc(100vh-180px)] overflow-hidden rounded-md border">
         {/* Left: Message list */}
-        <div className="w-[350px] shrink-0 border-r">
+        <div className="w-[350px] shrink-0 border-r overflow-hidden">
           <MessageList
             messages={messages}
             selectedId={selectedId}
@@ -107,7 +107,7 @@ export default function ReviewPage() {
         </div>
 
         {/* Right: Detail */}
-        <div className="flex-1">
+        <div className="flex-1 overflow-hidden">
           <MessageDetail message={selectedMessage} />
         </div>
       </div>

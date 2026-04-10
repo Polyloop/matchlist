@@ -108,6 +108,15 @@ export const sendEmail = internalAction({
         metadata: { resendId: data?.id },
       });
 
+      // Auto-append fact
+      await ctx.runMutation(internal.intelligence.supporterFacts.addFact, {
+        orgId: args.orgId,
+        prospectId: args.prospectId,
+        factType: "outreach",
+        content: `Email sent: "${message.subject || "outreach"}" to ${prospect.email}`,
+        source: "pipeline",
+      });
+
       // Schedule follow-up if enabled
       const settings = await ctx.runQuery(
         internal.pipeline.helpers.getCampaignSettings,
