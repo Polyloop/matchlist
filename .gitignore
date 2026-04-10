@@ -36,9 +36,6 @@ pnpm-debug.log*
 next-env.d.ts
 .vercel
 
-# convex
-convex/_generated/
-
 # supabase (legacy - migrated to convex)
 supabase/.temp/
 
