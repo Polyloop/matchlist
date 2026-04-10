@@ -1,185 +1,155 @@
-# Plan: Inbound Intent Classification + Proactive Agent Triggers
+# Milestone 1: Supporter Memory + Next-Best-Action Engine + Scout Briefing
 
 ## Context
 
-Moving Matchlist from "campaign tool you operate" to "relationship agent that operates for you." Two features that make the biggest difference:
+Moving from "campaign outreach tool" to "living relationship layer." The supporter becomes the primary object. Scout gets smarter about who matters now, why, and what to do — surfaced through existing surfaces (chat, detail panel, review inbox), not new pages.
 
-1. **Inbound intent classification** — when a response is marked, AI classifies the intent and routes to the right action (not just a binary "responded" flag)
-2. **Proactive triggers** — a scheduled agent that continuously scans data, detects opportunities, and takes autonomous action
+Current state: prospects have relationship fields (membershipStatus, engagementTypes, notes, etc.) and basic intelligence (signals, donor score, suggested action). But the intelligence is shallow — it's heuristic rules, not a scored model. Scout can analyse a network but gives generic recommendations.
 
----
-
-## 1. Inbound Intent Classification
-
-### Current state
-When user clicks "Mark as Responded", the system:
-- Sets `respondedAt` on the message
-- Cancels follow-up sequences
-- Logs "Response received"
-- Schedules a blind AI reply (doesn't know what the prospect said)
-
-### New flow
-When user clicks "Mark as Responded", optionally pastes the reply text, the system:
-
-1. **AI classifies the intent** into one of:
-   - `interested` — wants more info, meeting, next steps
-   - `positive` — accepted, agreed, will do it
-   - `question` — asking for clarification
-   - `referral` — redirecting to someone else ("talk to my colleague")
-   - `not_now` — timing isn't right but not a hard no
-   - `declined` — clear no, unsubscribe
-   - `out_of_office` — auto-reply, try again later
-
-2. **Routes to the right action based on classification:**
-   - `interested/positive/question` → generate tailored reply, keep in active pipeline
-   - `referral` → log the referral, create new prospect for the referred person if name/email given
-   - `not_now` → pause sequence, schedule re-engagement in 30/60/90 days via Cronlet
-   - `declined` → mark as cold, stop all sequences, log permanently
-   - `out_of_office` → reschedule the original message for +7 days
-
-3. **The AI reply is tailored to the classification** — not a generic follow-up
-
-### Schema changes
-
-Add to `outreachMessages`:
-```
-responseText: v.optional(v.string()),         // The prospect's reply (pasted by user)
-responseIntent: v.optional(v.string()),       // AI-classified intent
-responseClassifiedAt: v.optional(v.number()),
-```
-
-### Convex changes
-
-**`convex/pipeline/intentClassifier.ts`** (new) — Internal action:
-- Receives: original message + response text (or empty)
-- Calls Claude with classification prompt
-- Returns: `{ intent, confidence, suggestedAction, reasoning }`
-
-**`convex/outreach/mutations.ts`** — Update `markResponded`:
-- Accept optional `responseText` arg
-- If response text provided, schedule intent classification
-- If no text, still mark responded + generate generic reply (current behaviour)
-
-**`convex/pipeline/intentRouter.ts`** (new) — Internal mutation:
-- Called after classification completes
-- Routes based on intent:
-  - `interested/positive/question`: schedule reply generation with context
-  - `referral`: log + optionally create new prospect
-  - `not_now`: schedule Cronlet re-engagement task (30 days)
-  - `declined`: mark prospect as `disengaged`, stop all automation
-  - `out_of_office`: reschedule send for +7 days
-
-### UI changes
-
-**`components/review/message-detail.tsx`** — Update "Mark as Responded":
-- Instead of a simple button, show a small form:
-  - Textarea: "Paste the reply (optional)" — collapsible, not required
-  - Button: "Classify & Route" (or just "Mark Responded" if no text)
-- After classification, show the result inline:
-  - Intent badge: "Interested" (green) / "Declined" (red) / etc.
-  - AI reasoning: "They asked about the submission process — this is a warm lead"
-  - Suggested action: "Send detailed follow-up with matching gift guide"
-  - The generated reply is already being drafted below
-
-**`components/review/message-list.tsx`** — Show intent badge on responded messages:
-  - "Interested" / "Declined" / "OOO" etc. with color coding
+Target: Every supporter has a scored "why now" explanation and a specific recommended action. Scout's briefing shows the top opportunities across the entire org, not just campaign-level metrics.
 
 ---
 
-## 2. Proactive Agent Triggers
+## 1. Supporter Facts Model
 
-### Concept
+Add a `supporterFacts` table — a source-aware log of every piece of knowledge about a supporter. This is the "memory" layer.
 
-A scheduled job (via Convex crons or Cronlet) that runs periodically, analyses all data, detects actionable moments, and either:
-- **Takes autonomous action** (if auto-send is on): generates messages, schedules sends
-- **Creates signals** (if auto-send is off): surfaces in the Signals panel for the user
-
-This is the difference between "signals you look at" and "an agent that acts."
-
-### Trigger types
-
-**Re-engagement triggers:**
-- Prospect sent message 14+ days ago, no open → re-try with different subject line (auto)
-- Prospect opened but didn't respond, 7+ days → send follow-up (auto or signal)
-- Prospect marked `not_now` 30+ days ago → re-engage (auto or signal)
-
-**Opportunity triggers:**
-- New enrichment reveals match eligibility → draft matching gift outreach (auto)
-- Donor score > 80 and no outreach yet → prioritise and draft (auto or signal)
-- Website intelligence found CSR programme → flag for sponsorship outreach (signal)
-
-**Maintenance triggers:**
-- Campaign has prospects with failed enrichments → auto-retry (auto)
-- Campaign has stale drafts (7+ days unreviewed) → remind user (signal)
-- Daily send quota not reached → suggest more outreach (signal)
-
-### Implementation
-
-**`convex/agent/triggers.ts`** (new) — The agent brain:
-
+**Add to `convex/schema.ts`:**
 ```typescript
-// Scheduled to run every hour (or via Cronlet every 30 min)
-export const runTriggerScan = internalAction({
-  // 1. Get all orgs
-  // 2. For each org, scan data for trigger conditions
-  // 3. For each trigger fired:
-  //    - If auto-action: execute (generate message, schedule send, retry enrichment)
-  //    - If signal-only: create activity log entry + update signals
-  // 4. Log what the agent did
-});
+supporterFacts: defineTable({
+  orgId: v.id("organizations"),
+  prospectId: v.id("prospects"),
+  factType: v.string(),     // "membership", "donation", "event", "outreach", "response", "enrichment", "note", "import"
+  content: v.string(),       // human-readable fact: "Donated $2000 in March 2023"
+  source: v.string(),        // "csv_import", "pipeline", "agent", "user", "crm", "email_webhook"
+  sourceDate: v.optional(v.string()),  // when this fact was true (not when recorded)
+  metadata: v.optional(v.any()),
+})
+  .index("by_prospect", ["prospectId"])
+  .index("by_org", ["orgId"]),
 ```
 
-**`convex/agent/actions.ts`** (new) — Autonomous actions the agent can take:
+**On import:** When CSV rows include relationship fields, auto-create facts:
+- membershipStatus → fact: "Member status: lapsed since 2023"
+- donationHistory → fact: "$2000 in 2023, $1500 in 2022"
+- notes → fact: "Former board member. Left after relocation."
+- engagementTypes → one fact per type: "Engaged as: volunteer", "Engaged as: board_member"
 
+**On pipeline events:** Auto-create facts:
+- Enrichment complete → "Employer match: 1:1 up to $10k (source: AI research)"
+- Message sent → "Outreach sent: matching gift email"
+- Response received → "Responded: interested (classified by AI)"
+- Agent action → "Agent: follow-up scheduled for 7 days"
+
+This gives every supporter a growing memory log, not just static imported fields.
+
+## 2. Next-Best-Action Scoring
+
+Replace the heuristic `analyseNetwork` with a proper scoring engine.
+
+**Create `convex/intelligence/nextBestAction.ts`:**
+
+For each supporter, calculate a composite score (0-100) based on:
+- **Recency decay**: when were they last engaged? (exponential decay from lastEngagement)
+- **Affinity signal**: membership status + engagement depth (board > donor > volunteer > event_attendee > never)
+- **Opportunity signal**: match eligible? employer changed? membership lapsing?
+- **Response history**: opened emails? responded? declined?
+- **Gap signal**: high-value supporter with no recent outreach = high priority
+
+Each factor is 0-20 points, summed to a priority score.
+
+Then assign a `recommendedAction` from the standardised types:
+- `reconnect` — lapsed/former with high affinity, no recent contact
+- `renew` — membership lapsing or recently lapsed
+- `ask_match` — match eligible, hasn't been asked
+- `share_value` — active supporter, recent engagement, give before asking
+- `invite` — event attendee or volunteer, upcoming opportunity
+- `ask_donate` — active donor, right timing
+- `steward` — responded positively, needs follow-through
+- `intro` — connector who could link others (stretch goal)
+
+Each action comes with:
+- `whyNow`: "Sarah was a board member for 3 years, left 2 years ago. Deloitte just expanded their matching programme. She hasn't heard from you since 2023."
+- `actionReason`: "A warm reconnection before a matching gift ask will feel natural given her history."
+- `priority`: 0-100 score
+
+**This replaces the current `analyseNetwork` query** and feeds into Scout's tools + the detail panel.
+
+## 3. Scout Tools — New and Updated
+
+**Replace `analyseNetwork` with `getNextBestActions`:**
 ```typescript
-export const autoRetryFailedEnrichments = internalAction(...)
-export const autoGenerateForHighScoreProspects = internalAction(...)
-export const autoResendWithNewSubject = internalAction(...)
-export const autoReEngageLapsed = internalAction(...)
+getNextBestActions: {
+  description: "Get the top recommended actions across all supporters — who to engage, why now, and what approach",
+  inputSchema: z.object({
+    limit: z.number().optional(),
+    campaignId: z.string().optional(),
+    actionType: z.string().optional(),  // filter to specific action type
+  }),
+}
 ```
 
-**`convex/crons.ts`** (new) — Schedule the trigger scan:
+Returns ranked list of supporters with: name, employer, priority score, recommendedAction, whyNow, actionReason.
+
+**Add `getRelationshipMoments`:**
 ```typescript
-import { cronJobs } from "convex/server";
-import { internal } from "./_generated/api";
-
-const crons = cronJobs();
-crons.interval("agent trigger scan", { minutes: 30 }, internal.agent.triggers.runTriggerScan);
-export default crons;
+getRelationshipMoments: {
+  description: "Get time-sensitive relationship moments — memberships about to lapse, follow-ups due, responses needing action",
+}
 ```
 
-### Activity log for agent actions
+Returns: lapsing memberships (30/60/90 day windows), stale outreach (no open after 14 days), open responses (classified but no follow-up), agent recommendations pending.
 
-When the agent takes autonomous action, it logs clearly:
-- Type: `agent_action` (distinct from user-initiated `enrichment_complete` etc.)
-- Message: "Agent: Re-sent email to Sarah Mitchell with new subject line (original had no opens after 14 days)"
-- This shows up in the Activity feed with a distinct "Agent" label
-
-### Schema changes
-
-Add to `prospects`:
-```
-engagementStatus: v.optional(v.string()),  // "active" | "lapsed" | "disengaged" | "reengaging"
-lastAgentAction: v.optional(v.number()),   // timestamp of last autonomous action
+**Add `getSupporterProfile`:**
+```typescript
+getSupporterProfile: {
+  description: "Get full relationship profile for a supporter including facts, why-now explanation, and recommended action",
+  inputSchema: z.object({ prospectName: z.string() }),
+}
 ```
 
-### Signals integration
+Returns the full intelligence profile that Scout can narrate: facts log, relationship strength, why now, recommended action + reason, open loops.
 
-The existing `analytics/signals.ts` already surfaces passive signals. The agent trigger scan adds:
-- Signals with `type: "agent_action"` — "Agent re-sent 3 emails with new subject lines"
-- Signals with `type: "agent_recommendation"` — "Agent found 5 high-score prospects to contact. Auto-send is off — approve to proceed."
+**Update `getBriefing`** to use next-best-actions instead of just metrics + signals.
 
-### UI: Agent status on dashboard
+## 4. Detail Panel — "Relationship Rewind"
 
-Add a small "Agent" status card to the dashboard:
-```
-┌─────────────────────────────────────────┐
-│ 🤖 Agent Status                        │
-│ Last scan: 12 minutes ago              │
-│ Actions today: 3 re-sends, 2 follow-ups│
-│ Pending recommendations: 5             │
-└─────────────────────────────────────────┘
-```
+**Update `components/prospect-detail-panel.tsx`:**
+
+Add three new sections (above enrichment data):
+
+**Why Now** — the `whyNow` text from the scoring engine. One sentence explaining why Scout thinks this person matters right now.
+
+**Recommended Action** — the `recommendedAction` with `actionReason`. Clickable: "Draft reconnection message →"
+
+**Relationship Timeline** — replace the current activity log with a richer timeline that includes supporter facts. Each entry shows: icon, description, source badge, date. Newest first. This is the "relationship rewind."
+
+**Open Loops** — any pending items: scheduled follow-ups, unanswered responses, stalled sequences.
+
+## 5. Lighter Dashboard
+
+**Update `app/(dashboard)/dashboard/page.tsx`:**
+
+Replace the current metrics-heavy dashboard with:
+- **Scout's Top 5** — the 5 highest-priority next-best-actions, rendered as cards (name, why now, action button)
+- **Open Conversations** — responses that need follow-up
+- **Review Pressure** — draft count with a link to Review
+- **Activity Feed** — last 10 agent/pipeline actions (existing)
+
+Remove: the 5-column metrics row, the campaign cards grid, the send schedule, the signals panel. These are accessible through Scout ("what are my metrics?", "show me the schedule") but don't need to be on the dashboard.
+
+## 6. Auto-Append Facts on Pipeline Events
+
+**Update `convex/pipeline/runner.ts` and `convex/pipeline/sender.ts`:**
+
+After each pipeline event, auto-create a supporterFact:
+- Enrichment success → fact about what was found
+- Message generated → fact about what was drafted
+- Message sent → fact about what was sent and when
+- Response classified → fact about the response intent
+- Agent action → fact about what the agent did
+
+This makes the memory grow automatically without manual notes.
 
 ---
 
@@ -188,41 +158,40 @@ Add a small "Agent" status card to the dashboard:
 ### Create
 | File | Purpose |
 |------|---------|
-| `convex/pipeline/intentClassifier.ts` | AI intent classification action |
-| `convex/pipeline/intentRouter.ts` | Route actions based on classified intent |
-| `convex/agent/triggers.ts` | Scheduled trigger scan — the agent brain |
-| `convex/agent/actions.ts` | Autonomous actions (retry, re-send, re-engage) |
-| `convex/crons.ts` | Schedule agent scan every 30 min |
-| `components/dashboard/agent-status.tsx` | Agent status card for dashboard |
+| `convex/intelligence/nextBestAction.ts` | Scoring engine — priority score + recommended action per supporter |
+| `convex/intelligence/supporterFacts.ts` | Mutations + queries for supporter facts |
 
 ### Modify
 | File | Change |
 |------|--------|
-| `convex/schema.ts` | Add `responseText`, `responseIntent`, `responseClassifiedAt` to outreachMessages. Add `engagementStatus`, `lastAgentAction` to prospects. |
-| `convex/outreach/mutations.ts` | Update `markResponded` to accept `responseText`, schedule classification |
-| `convex/pipeline/replyGenerator.ts` | Accept intent + response text for tailored replies |
-| `components/review/message-detail.tsx` | Response text input + intent display |
-| `components/review/message-list.tsx` | Intent badge on responded messages |
-| `app/(dashboard)/dashboard/page.tsx` | Add agent status card |
+| `convex/schema.ts` | Add `supporterFacts` table |
+| `convex/prospects/mutations.ts` | Auto-create facts on import |
+| `convex/prospects/networkAnalysis.ts` | Replace with call to nextBestAction |
+| `convex/prospects/intelligenceQueries.ts` | Add whyNow, recommendedAction, openLoops to profile |
+| `components/prospect-detail-panel.tsx` | Add Why Now, Recommended Action, Open Loops sections |
+| `app/api/chat/route.ts` | Replace analyseNetwork tool with getNextBestActions, add getSupporterProfile and getRelationshipMoments |
+| `app/(dashboard)/dashboard/page.tsx` | Simplify to Scout's Top 5 + Open Conversations + Review Pressure + Activity |
+| `convex/pipeline/runner.ts` | Auto-append facts after enrichment |
+| `convex/pipeline/sender.ts` | Auto-append facts after send |
+| `convex/pipeline/intentRouter.ts` | Auto-append facts after response classification |
 
 ---
 
 ## Verification
 
-### Intent Classification
-- [ ] "Mark as Responded" shows optional text input for pasting reply
-- [ ] With text: AI classifies intent, shows badge + reasoning
-- [ ] `interested` → tailored reply generated
-- [ ] `declined` → prospect marked disengaged, sequences stopped
-- [ ] `out_of_office` → reschedules for +7 days
-- [ ] Without text: existing behaviour (generic reply)
-- [ ] Intent badge shows in message list
+- [ ] Importing CSV with relationship fields auto-creates supporterFacts
+- [ ] Pipeline events auto-create facts (enrichment, send, response)
+- [ ] "Who should I talk to?" returns scored recommendations with whyNow explanations
+- [ ] "Tell me about Sarah Mitchell" returns full relationship profile with facts + why now
+- [ ] "What needs my attention today?" returns time-sensitive moments
+- [ ] Detail panel shows Why Now section + Recommended Action + Open Loops
+- [ ] Dashboard shows Scout's Top 5 + Open Conversations + Review Pressure
+- [ ] Lapsed member at matching employer scores higher than unknown contact
+- [ ] Former board member who hasn't been contacted in 2 years gets "reconnect" recommendation
+- [ ] Active donor with open match opportunity gets "ask_match" recommendation
 
-### Proactive Agent
-- [ ] Cron job runs every 30 minutes
-- [ ] Auto-retries failed enrichments
-- [ ] Re-sends emails with no opens after 14 days (new subject)
-- [ ] Generates outreach for high-score prospects without messages
-- [ ] Logs all actions with "Agent:" prefix in activity feed
-- [ ] Agent status card shows on dashboard
-- [ ] With auto-send off: creates signals/recommendations instead of acting
+## What We're NOT Building
+- Separate Dormant Network / Warm Intros / Match Follow-Through pages
+- Visible "network edges" UI
+- Analytics dashboards for model internals
+- Anything that makes the app feel like enterprise CRM software

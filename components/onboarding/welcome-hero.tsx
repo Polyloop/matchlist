@@ -15,7 +15,7 @@ export function WelcomeHero() {
     <div className="flex min-h-[70vh] flex-col items-center justify-center">
       <div className="mx-auto max-w-lg text-center">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Welcome to MatchList
+          Welcome to Scout
         </h1>
         <p className="mt-3 text-base text-muted-foreground leading-relaxed">
           Your AI-powered outreach platform for non-profits. Find the right people, generate personalised messages, and automate your outreach — all in one place.

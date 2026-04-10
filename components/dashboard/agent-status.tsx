@@ -37,7 +37,7 @@ export function AgentStatus() {
 
   return (
     <Card>
-      <CardContent className="!p-3">
+      <CardContent>
         <div className="flex items-start gap-3">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-600">
             <HugeiconsIcon icon={AiBeautifyIcon} strokeWidth={1.5} className="size-3.5" />

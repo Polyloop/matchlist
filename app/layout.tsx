@@ -18,8 +18,8 @@ const fontMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "MatchList",
-  description: "Identify and reach donors with employer matching gift programs",
+  title: "Scout",
+  description: "AI-powered membership agent for non-profits",
 };
 
 export default function RootLayout({

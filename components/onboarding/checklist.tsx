@@ -37,7 +37,7 @@ export function OnboardingChecklist({ steps, completedSteps, totalSteps }: Check
       <CardContent className="py-5">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="text-sm font-medium">Get started with MatchList</h2>
+            <h2 className="text-sm font-medium">Get started with Scout</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               Complete these steps to send your first AI-powered outreach
             </p>
